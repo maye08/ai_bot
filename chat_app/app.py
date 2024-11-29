@@ -111,7 +111,6 @@ def chat():
             
         chat_history = ChatHistory.query.filter_by(user_id=user_id).first()
         if not chat_history:
-            # 初始化新的聊天历史
             chat_history = ChatHistory(
                 user_id=user_id,
                 messages=[SYSTEM_MESSAGE]
@@ -119,7 +118,7 @@ def chat():
             db.session.add(chat_history)
             db.session.commit()
         
-        # 获取完整的消息历史，确保是列表类型
+        # 获取完整的消息历史
         messages = list(chat_history.messages) if isinstance(chat_history.messages, list) else [SYSTEM_MESSAGE]
         logger.debug(f"Current messages before adding user message: {messages}")
             
@@ -127,11 +126,9 @@ def chat():
         messages.append({"role": "user", "content": user_message})
         
         # 确保不超过token限制
-        messages = trim_messages(messages, MAX_TOKENS - 4000)  # 预留空间给回复
+        messages = trim_messages(messages, MAX_TOKENS - 4000)
         
         logger.debug(f"Messages being sent to OpenAI: {messages}")
-        
-        # 发送完整的消息历史到OpenAI
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=messages,
@@ -147,9 +144,9 @@ def chat():
         chat_history.last_updated = datetime.utcnow()
         db.session.commit()
         
-        logger.debug(f"Final messages after update: {messages}")
-        
         current_tokens = num_tokens_from_messages(messages)
+        logger.debug(f"Current tokens: {current_tokens}")
+        
         return jsonify({
             "response": assistant_message,
             "current_tokens": current_tokens,

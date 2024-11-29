@@ -8,22 +8,79 @@
 </head>
 <body>
     <div class="chat-container">
+        <div class="token-info" id="token-info">已使用 0 / 128K tokens</div>
         <div id="chat-messages"></div>
         <div class="input-container">
             <input type="text" id="user-input" placeholder="输入消息...">
             <button onclick="sendMessage()">发送</button>
+            <button onclick="clearChat()" class="clear">清除对话</button>
         </div>
     </div>
 
     <script>
+        let messageContainer = document.getElementById('chat-messages');
+        let tokenInfo = document.getElementById('token-info');
+
+        function scrollToBottom() {
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+
+        function appendMessage(role, content) {
+            if (role === 'user') {
+                messageContainer.innerHTML += `
+                    <div class="message user">
+                        <strong>你:</strong> ${content}
+                    </div>`;
+            } else if (role === 'assistant') {
+                messageContainer.innerHTML += `
+                    <div class="message ai">
+                        <strong>AI:</strong> ${content}
+                    </div>`;
+            } else if (role === 'system') {
+                messageContainer.innerHTML += `
+                    <div class="message system">
+                        <strong>系统:</strong> ${content}
+                    </div>`;
+            }
+            scrollToBottom();
+        }
+
+        function updateTokenInfo(current_tokens, max_tokens) {
+            const currentK = Math.round(current_tokens / 1000);
+            const maxK = Math.round(max_tokens / 1000);
+            tokenInfo.textContent = `已使用 ${currentK}K / ${maxK}K tokens`;
+            tokenInfo.style.display = 'block';  // 确保显示
+        }
+
+        async function loadChatHistory() {
+            try {
+                const response = await fetch('/get_chat_history');
+                const data = await response.json();
+                
+                if (response.ok && data.messages) {
+                    messageContainer.innerHTML = '';
+                    data.messages.forEach(msg => {
+                        if (msg.role !== 'system') {  // 不显示系统消息
+                            appendMessage(msg.role, msg.content);
+                        }
+                    });
+                    updateTokenInfo(data.current_tokens, data.max_tokens);
+                } else {
+                    console.error('Error loading chat history:', data.error);
+                }
+            } catch (error) {
+                console.error('Error loading chat history:', error);
+                appendMessage('system', '加载历史消息失败: ' + error.message);
+            }
+        }
+
         async function sendMessage() {
             const input = document.getElementById('user-input');
-            const messageContainer = document.getElementById('chat-messages');
             const message = input.value.trim();
             
             if (!message) return;
 
-            messageContainer.innerHTML += `<div class="message"><strong>你:</strong> ${message}</div>`;
+            appendMessage('user', message);
             input.value = '';
 
             try {
@@ -35,23 +92,33 @@
                     body: JSON.stringify({ message: message })
                 });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
                 const data = await response.json();
                 
-                if (data.error) {
-                    messageContainer.innerHTML += `<div class="message" style="color: red;">错误: ${data.error}</div>`;
+                if (response.ok) {
+                    appendMessage('assistant', data.response);
+                    updateTokenInfo(data.current_tokens, data.max_tokens);
                 } else {
-                    messageContainer.innerHTML += `<div class="message"><strong>AI:</strong> ${data.response}</div>`;
+                    appendMessage('system', '错误: ' + (data.error || '未知错误'));
                 }
             } catch (error) {
                 console.error('Error:', error);
-                messageContainer.innerHTML += `<div class="message" style="color: red;">错误: ${error.message}</div>`;
+                appendMessage('system', '错误: ' + error.message);
             }
+        }
 
-            messageContainer.scrollTop = messageContainer.scrollHeight;
+        async function clearChat() {
+            try {
+                const response = await fetch('/clear_chat', { method: 'POST' });
+                if (response.ok) {
+                    messageContainer.innerHTML = '';
+                    updateTokenInfo(0, 128000);
+                } else {
+                    throw new Error('清除聊天失败');
+                }
+            } catch (error) {
+                console.error('Error clearing chat:', error);
+                appendMessage('system', '清除聊天失败: ' + error.message);
+            }
         }
 
         document.getElementById('user-input').addEventListener('keypress', function(e) {
@@ -59,6 +126,8 @@
                 sendMessage();
             }
         });
+
+        window.onload = loadChatHistory;
     </script>
 </body>
-</html> 
+</html>
