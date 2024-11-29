@@ -80,20 +80,12 @@ class ChatHistory(db.Model):
 
 @app.before_request
 def before_request():
-    """请求预处理：确保用户会话存在"""
+    """请求预处理：检查会话是否过期"""
+    if request.endpoint in ['static', 'check_session', 'create_id', 'switch_id']:
+        return
+    
     if 'user_id' not in session:
-        session.permanent = True
-        session['user_id'] = str(uuid.uuid4())
-        chat_history = ChatHistory(
-            user_id=session['user_id'],
-            messages=[SYSTEM_MESSAGE]
-        )
-        try:
-            db.session.add(chat_history)
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Error creating chat history: {str(e)}")
+        return jsonify({"error": "请先创建或切换到有效的用户ID"}), 401
 
 @app.route('/')
 def home():
@@ -194,6 +186,47 @@ def get_chat_history():
     except Exception as e:
         logger.error(f"Error getting chat history: {str(e)}")
         return jsonify({"error": f"服务器错误: {str(e)}"}), 500
+
+@app.route('/check_session')
+def check_session():
+    """检查当前会话状态"""
+    user_id = session.get('user_id')
+    return jsonify({"user_id": user_id})
+
+@app.route('/create_id', methods=['POST'])
+def create_id():
+    """创建新的用户ID"""
+    new_user_id = str(uuid.uuid4())
+    session['user_id'] = new_user_id
+    
+    # 创建新的聊天历史
+    chat_history = ChatHistory(
+        user_id=new_user_id,
+        messages=[SYSTEM_MESSAGE]
+    )
+    try:
+        db.session.add(chat_history)
+        db.session.commit()
+        return jsonify({"user_id": new_user_id})
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error creating chat history: {str(e)}")
+        return jsonify({"error": "创建聊天历史失败"}), 500
+
+@app.route('/switch_id', methods=['POST'])
+def switch_id():
+    """切换到已有的用户ID"""
+    new_id = request.json.get('user_id')
+    if not new_id:
+        return jsonify({"error": "未提供用户ID"}), 400
+        
+    # 检查ID是否存在
+    chat_history = ChatHistory.query.filter_by(user_id=new_id).first()
+    if not chat_history:
+        return jsonify({"error": "ID不存在"}), 404
+        
+    session['user_id'] = new_id
+    return jsonify({"user_id": new_id})
 
 if __name__ == '__main__':
     with app.app_context():
