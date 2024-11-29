@@ -97,4 +97,16 @@ button.clear {
 
 button.clear:hover {
     background-color: #c82333;
+}
+
+.user-info {
+    text-align: left;
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 15px;
+    padding: 8px;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #eee;
+    display: block;
 } 

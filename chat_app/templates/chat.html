@@ -8,6 +8,7 @@
 </head>
 <body>
     <div class="chat-container">
+        <div class="user-info" id="user-info">用户ID: 加载中...</div>
         <div class="token-info" id="token-info">已使用 0 / 128K tokens</div>
         <div id="chat-messages"></div>
         <div class="input-container">
@@ -20,6 +21,7 @@
     <script>
         let messageContainer = document.getElementById('chat-messages');
         let tokenInfo = document.getElementById('token-info');
+        let userInfo = document.getElementById('user-info');
 
         function scrollToBottom() {
             messageContainer.scrollTop = messageContainer.scrollHeight;
@@ -52,6 +54,10 @@
             tokenInfo.style.display = 'block';  // 确保显示
         }
 
+        function updateUserInfo(userId) {
+            userInfo.textContent = `用户ID: ${userId.substring(0, 8)}...`;  // 只显示前8位
+        }
+
         async function loadChatHistory() {
             try {
                 const response = await fetch('/get_chat_history');
@@ -65,6 +71,7 @@
                         }
                     });
                     updateTokenInfo(data.current_tokens, data.max_tokens);
+                    updateUserInfo(data.user_id);
                 } else {
                     console.error('Error loading chat history:', data.error);
                 }

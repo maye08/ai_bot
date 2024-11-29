@@ -187,7 +187,8 @@ def get_chat_history():
         return jsonify({
             "messages": chat_history.messages,
             "current_tokens": current_tokens,
-            "max_tokens": MAX_TOKENS
+            "max_tokens": MAX_TOKENS,
+            "user_id": user_id
         })
 
     except Exception as e:
