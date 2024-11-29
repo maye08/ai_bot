@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 聊天</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="chat-container">
+        <div id="chat-messages"></div>
+        <div class="input-container">
+            <input type="text" id="user-input" placeholder="输入消息...">
+            <button onclick="sendMessage()">发送</button>
+        </div>
+    </div>
+
+    <script>
+        async function sendMessage() {
+            const input = document.getElementById('user-input');
+            const messageContainer = document.getElementById('chat-messages');
+            const message = input.value.trim();
+            
+            if (!message) return;
+
+            messageContainer.innerHTML += `<div class="message"><strong>你:</strong> ${message}</div>`;
+            input.value = '';
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    messageContainer.innerHTML += `<div class="message" style="color: red;">错误: ${data.error}</div>`;
+                } else {
+                    messageContainer.innerHTML += `<div class="message"><strong>AI:</strong> ${data.response}</div>`;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                messageContainer.innerHTML += `<div class="message" style="color: red;">错误: ${error.message}</div>`;
+            }
+
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+
+        document.getElementById('user-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html> 
