@@ -1,142 +1,37 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 聊天</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>AI Chat</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="chat-container">
-        <div class="id-management">
-            <div class="user-info-container">
-                <div class="user-info" id="user-info">用户ID: 未登录</div>
-                <button onclick="copyUserId()" class="copy-button" title="复制ID">复制</button>
-            </div>
-            <div class="id-controls">
-                <button onclick="createNewId()" class="secondary">创建新ID</button>
-                <input type="text" id="id-input" placeholder="输入已有ID">
-                <button onclick="switchId()" class="secondary">切换ID</button>
-            </div>
+    <div class="user-info">
+        <div class="user-id">
+            用户ID: <span id="current-user-id">{{ user_id }}</span>
+            <button onclick="copyUserId()">复制</button>
         </div>
-        <div class="token-info" id="token-info">已使用 0 / 128K tokens</div>
-        <div id="chat-messages"></div>
+        <div class="id-controls">
+            <button onclick="createNewId()">创建新ID</button>
+            <input type="text" id="id-input" placeholder="输入已有ID">
+            <button onclick="switchId()">切换ID</button>
+        </div>
+    </div>
+
+    <div class="chat-container">
+        <div id="message-container" class="message-container"></div>
         <div class="input-container">
-            <input type="text" id="user-input" placeholder="输入消息..." disabled>
-            <button onclick="sendMessage()" id="send-button" disabled>发送</button>
-            <button onclick="clearChat()" class="clear" id="clear-button" disabled>清除对话</button>
+            <input type="text" id="user-input" placeholder="输入消息..." onkeypress="handleKeyPress(event)">
+            <button onclick="sendMessage()">发送</button>
+            <button onclick="clearChat()">清除对话</button>
+        </div>
+        <div class="token-info">
+            已用 Token: <span id="current-tokens">0</span> / <span id="max-tokens">4000</span>
         </div>
     </div>
 
     <script>
-        let messageContainer = document.getElementById('chat-messages');
-        let tokenInfo = document.getElementById('token-info');
-        let userInfo = document.getElementById('user-info');
-
-        function scrollToBottom() {
-            messageContainer.scrollTop = messageContainer.scrollHeight;
-        }
-
-        function appendMessage(role, content) {
-            if (role === 'user') {
-                messageContainer.innerHTML += `
-                    <div class="message user">
-                        <strong>你:</strong> ${content}
-                    </div>`;
-            } else if (role === 'assistant') {
-                messageContainer.innerHTML += `
-                    <div class="message ai">
-                        <strong>AI:</strong> ${content}
-                    </div>`;
-            } else if (role === 'system') {
-                messageContainer.innerHTML += `
-                    <div class="message system">
-                        <strong>系统:</strong> ${content}
-                    </div>`;
-            }
-            scrollToBottom();
-        }
-
-        function updateTokenInfo(current_tokens, max_tokens) {
-            const currentK = Math.round(current_tokens / 1000);
-            const maxK = Math.round(max_tokens / 1000);
-            tokenInfo.textContent = `已使用 ${currentK}K / ${maxK}K tokens`;
-            tokenInfo.style.display = 'block';  // 确保显示
-        }
-
-        function updateUserInfo(userId) {
-            userInfo.textContent = `用户ID: ${userId}`;  // 显示完整ID
-        }
-
-        async function loadChatHistory() {
-            try {
-                const response = await fetch('/get_chat_history');
-                const data = await response.json();
-                
-                if (response.ok && data.messages) {
-                    messageContainer.innerHTML = '';
-                    data.messages.forEach(msg => {
-                        if (msg.role !== 'system') {  // 不显示系统消息
-                            appendMessage(msg.role, msg.content);
-                        }
-                    });
-                    updateTokenInfo(data.current_tokens, data.max_tokens);
-                    updateUserInfo(data.user_id);
-                } else {
-                    console.error('Error loading chat history:', data.error);
-                }
-            } catch (error) {
-                console.error('Error loading chat history:', error);
-                appendMessage('system', '加载历史消息失败: ' + error.message);
-            }
-        }
-
-        async function sendMessage() {
-            const input = document.getElementById('user-input');
-            const message = input.value.trim();
-            
-            if (!message) return;
-
-            appendMessage('user', message);
-            input.value = '';
-
-            try {
-                const response = await fetch('/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ message: message })
-                });
-
-                const data = await response.json();
-                
-                if (response.ok) {
-                    appendMessage('assistant', data.response);
-                    updateTokenInfo(data.current_tokens, data.max_tokens);
-                } else {
-                    appendMessage('system', '错误: ' + (data.error || '未知错误'));
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                appendMessage('system', '错误: ' + error.message);
-            }
-        }
-
-        async function clearChat() {
-            try {
-                const response = await fetch('/clear_chat', { method: 'POST' });
-                if (response.ok) {
-                    messageContainer.innerHTML = '';
-                    updateTokenInfo(0, 128000);
-                } else {
-                    throw new Error('清除聊天失败');
-                }
-            } catch (error) {
-                console.error('Error clearing chat:', error);
-                appendMessage('system', '清除聊天失败: ' + error.message);
-            }
-        }
+        const messageContainer = document.getElementById('message-container');
+        let isProcessing = false;
 
         async function createNewId() {
             try {
@@ -144,9 +39,7 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    updateUserInfo(data.user_id);
-                    enableChat();
-                    loadChatHistory();
+                    window.location.href = data.redirect_url;
                 } else {
                     appendMessage('system', '创建ID失败: ' + (data.error || '未知错误'));
                 }
@@ -164,20 +57,20 @@
                 appendMessage('system', '请输入有效的ID');
                 return;
             }
-
+            
             try {
                 const response = await fetch('/switch_id', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({ user_id: newId })
                 });
+                
                 const data = await response.json();
                 
                 if (response.ok) {
-                    updateUserInfo(data.user_id);
-                    enableChat();
-                    loadChatHistory();
-                    idInput.value = '';
+                    window.location.href = data.redirect_url;
                 } else {
                     appendMessage('system', '切换ID失败: ' + (data.error || '未知错误'));
                 }
@@ -187,38 +80,110 @@
             }
         }
 
-        function enableChat() {
-            document.getElementById('user-input').disabled = false;
-            document.getElementById('send-button').disabled = false;
-            document.getElementById('clear-button').disabled = false;
-        }
-
-        window.onload = async function() {
-            const response = await fetch('/check_session');
-            const data = await response.json();
-            
-            if (data.user_id) {
-                updateUserInfo(data.user_id);
-                enableChat();
-                loadChatHistory();
-            }
-        };
-
-        document.getElementById('user-input').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
-
         function copyUserId() {
-            const userId = userInfo.textContent.replace('用户ID: ', '');
-            navigator.clipboard.writeText(userId).then(() => {
-                appendMessage('system', 'ID已复制到剪贴板');
+            const userId = document.getElementById('current-user-id').textContent;
+            const fullUrl = window.location.origin + '/' + userId;
+            navigator.clipboard.writeText(fullUrl).then(() => {
+                alert('完整URL已复制到剪贴板！');
             }).catch(err => {
                 console.error('复制失败:', err);
-                appendMessage('system', '复制ID失败');
+                alert('复制失败，请手动复制。');
             });
         }
+
+        async function loadChatHistory() {
+            try {
+                const userId = document.getElementById('current-user-id').textContent;
+                const response = await fetch(`/get_chat_history?user_id=${userId}`);
+                const data = await response.json();
+                
+                if (response.ok && data.messages) {
+                    messageContainer.innerHTML = '';
+                    data.messages.forEach(msg => {
+                        if (msg.role !== 'system') {
+                            appendMessage(msg.role, msg.content);
+                        }
+                    });
+                    updateTokenInfo(data.current_tokens, data.max_tokens);
+                    updateUserInfo(data.user_id);
+                    messageContainer.scrollTop = messageContainer.scrollHeight;
+                } else {
+                    console.error('Error loading chat history:', data.error);
+                }
+            } catch (error) {
+                console.error('Error loading chat history:', error);
+                appendMessage('system', '加载历史消息失败: ' + error.message);
+            }
+        }
+
+        function appendMessage(role, content) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}-message`;
+            const roleLabel = role === 'user' ? '你' : 'AI';
+            messageDiv.innerHTML = `<span class="role-label">${roleLabel}:</span> ${content}`;
+            messageContainer.appendChild(messageDiv);
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+
+        async function sendMessage() {
+            if (isProcessing) return;
+
+            const input = document.getElementById('user-input');
+            const message = input.value.trim();
+            const userId = document.getElementById('current-user-id').textContent; // 获取当前页面的user_id
+            
+            if (!message) return;
+            
+            isProcessing = true;
+            input.value = '';
+            appendMessage('user', message);
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        message: message,
+                        user_id: userId  // 在请求中包含user_id
+                     })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    appendMessage('assistant', data.response);
+                    updateTokenInfo(data.current_tokens, data.max_tokens);
+                } else {
+                    appendMessage('system', '发送失败: ' + (data.error || '未知错误'));
+                }
+            } catch (error) {
+                console.error('Error sending message:', error);
+                appendMessage('system', '发送失败: ' + error.message);
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function updateTokenInfo(current, max) {
+            document.getElementById('current-tokens').textContent = current;
+            document.getElementById('max-tokens').textContent = max;
+        }
+
+        function updateUserInfo(userId) {
+            document.getElementById('current-user-id').textContent = userId;
+        }
+
+        // 页面加载完成后加载聊天历史
+        window.onload = loadChatHistory;
     </script>
 </body>
 </html>
