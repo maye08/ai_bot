@@ -87,7 +87,7 @@ class ChatHistory(db.Model):
 @app.before_request
 def before_request():
     """请求预处理：检查会话是否过期"""
-    if request.endpoint in ['static', 'create_id', 'switch_id', 'default_home', 'user_chat', 'get_chat_history']:  # 添加 get_chat_history
+    if request.endpoint in ['static', 'create_id', 'switch_id', 'default_home', 'user_chat', 'get_chat_history', 'clear_chat']:  # 添加 clear_chat
         return
     
     if 'user_id' not in session:
@@ -233,6 +233,33 @@ def chat():
     except Exception as e:
         logger.error(f"Chat error for user {user_id}: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": f"服务器错误: {str(e)}"}), 500
+
+@app.route('/clear_chat', methods=['POST'])
+def clear_chat():
+    """清除聊天历史"""
+    try:
+        user_id = request.json.get('user_id')
+        if not user_id:
+            return jsonify({"error": "Missing user_id"}), 400
+            
+        chat_history = ChatHistory.query.filter_by(user_id=user_id).first()
+        if not chat_history:
+            return jsonify({"error": "Chat history not found"}), 404
+            
+        # 只保留系统消息
+        chat_history.messages = [SYSTEM_MESSAGE]
+        chat_history.last_updated = datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Chat history cleared successfully",
+            "current_tokens": num_tokens_from_messages([SYSTEM_MESSAGE]),
+            "max_tokens": MAX_TOKENS
+        })
+        
+    except Exception as e:
+        logger.error(f"Error clearing chat history: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"error": f"清除聊天历史失败: {str(e)}"}), 500
 
 if __name__ == '__main__':
     with app.app_context():

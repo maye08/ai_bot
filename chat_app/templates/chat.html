@@ -119,9 +119,20 @@
         function appendMessage(role, content) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}-message`;
-            const roleLabel = role === 'user' ? '你' : 'AI';
-            messageDiv.innerHTML = `<span class="role-label">${roleLabel}:</span> ${content}`;
+            
+            const roleLabel = document.createElement('span');
+            roleLabel.className = 'role-label';
+            roleLabel.textContent = role === 'user' ? '用户' : 
+                                  role === 'assistant' ? 'AI' : 
+                                  '系统';
+            
+            const contentSpan = document.createElement('span');
+            contentSpan.textContent = content;
+            
+            messageDiv.appendChild(roleLabel);
+            messageDiv.appendChild(contentSpan);
             messageContainer.appendChild(messageDiv);
+            
             messageContainer.scrollTop = messageContainer.scrollHeight;
         }
 
@@ -180,6 +191,34 @@
 
         function updateUserInfo(userId) {
             document.getElementById('current-user-id').textContent = userId;
+        }
+
+        async function clearChat() {
+            try {
+                const userId = document.getElementById('current-user-id').textContent;
+                const response = await fetch('/clear_chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ user_id: userId })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // 清空消息容器
+                    messageContainer.innerHTML = '';
+                    // 更新token信息
+                    updateTokenInfo(data.current_tokens, data.max_tokens);
+                    appendMessage('system', '对话已清除');
+                } else {
+                    appendMessage('system', '清除对话失败: ' + (data.error || '未知错误'));
+                }
+            } catch (error) {
+                console.error('Error clearing chat:', error);
+                appendMessage('system', '清除对话失败: ' + error.message);
+            }
         }
 
         // 页面加载完成后加载聊天历史
