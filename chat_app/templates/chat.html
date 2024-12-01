@@ -2,18 +2,13 @@
 <html>
 <head>
     <title>AI Chat</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="user-info">
-        <div class="user-id">
-            用户ID: <span id="current-user-id">{{ user_id }}</span>
-            <button onclick="copyUserId()">复制</button>
-        </div>
-        <div class="id-controls">
-            <button onclick="createNewId()">创建新ID</button>
-            <input type="text" id="id-input" placeholder="输入已有ID">
-            <button onclick="switchId()">切换ID</button>
+        <div class="user-controls">
+            <span>当前用户: {{ current_user.username }}</span>
+            <a href="{{ url_for('logout') }}" class="logout-btn">登出</a>
         </div>
     </div>
 
@@ -32,69 +27,16 @@
     <script>
         const messageContainer = document.getElementById('message-container');
         let isProcessing = false;
-
-        async function createNewId() {
-            try {
-                const response = await fetch('/create_id', { method: 'POST' });
-                const data = await response.json();
-                
-                if (response.ok) {
-                    window.location.href = data.redirect_url;
-                } else {
-                    appendMessage('system', '创建ID失败: ' + (data.error || '未知错误'));
-                }
-            } catch (error) {
-                console.error('Error creating ID:', error);
-                appendMessage('system', '创建ID失败: ' + error.message);
-            }
-        }
-
-        async function switchId() {
-            const idInput = document.getElementById('id-input');
-            const newId = idInput.value.trim();
-            
-            if (!newId) {
-                appendMessage('system', '请输入有效的ID');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/switch_id', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ user_id: newId })
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    window.location.href = data.redirect_url;
-                } else {
-                    appendMessage('system', '切换ID失败: ' + (data.error || '未知错误'));
-                }
-            } catch (error) {
-                console.error('Error switching ID:', error);
-                appendMessage('system', '切换ID失败: ' + error.message);
-            }
-        }
-
-        function copyUserId() {
-            const userId = document.getElementById('current-user-id').textContent;
-            const fullUrl = window.location.origin + '/' + userId;
-            navigator.clipboard.writeText(fullUrl).then(() => {
-                alert('完整URL已复制到剪贴板！');
-            }).catch(err => {
-                console.error('复制失败:', err);
-                alert('复制失败，请手动复制。');
-            });
-        }
+        let isLoading = false;
 
         async function loadChatHistory() {
+            if (isLoading) return;
+            isLoading = true;
+            
+            const loadingMessage = appendMessage('system', '加载聊天历史中...');
+            
             try {
-                const userId = document.getElementById('current-user-id').textContent;
-                const response = await fetch(`/get_chat_history?user_id=${userId}`);
+                const response = await fetch('/get_chat_history');
                 const data = await response.json();
                 
                 if (response.ok && data.messages) {
@@ -105,14 +47,16 @@
                         }
                     });
                     updateTokenInfo(data.current_tokens, data.max_tokens);
-                    updateUserInfo(data.user_id);
                     messageContainer.scrollTop = messageContainer.scrollHeight;
                 } else {
                     console.error('Error loading chat history:', data.error);
                 }
+                messageContainer.removeChild(loadingMessage);
             } catch (error) {
                 console.error('Error loading chat history:', error);
-                appendMessage('system', '加载历史消息失败: ' + error.message);
+                loadingMessage.textContent = '加载历史消息失败: ' + error.message;
+            } finally {
+                isLoading = false;
             }
         }
 
@@ -137,33 +81,31 @@
         }
 
         async function sendMessage() {
-            if (isProcessing) return;
+            if (isProcessing || isLoading) return;
 
             const input = document.getElementById('user-input');
             const message = input.value.trim();
-            const userId = document.getElementById('current-user-id').textContent; // 获取当前页面的user_id
             
             if (!message) return;
             
+            const sendButton = document.querySelector('button[onclick="sendMessage()"]');
+            sendButton.disabled = true;
             isProcessing = true;
-            input.value = '';
-            appendMessage('user', message);
-
+            
             try {
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ 
-                        message: message,
-                        user_id: userId  // 在请求中包含user_id
-                     })
+                    body: JSON.stringify({ message: message })
                 });
                 
                 const data = await response.json();
                 
                 if (response.ok) {
+                    appendMessage('user', message);
+                    input.value = '';
                     appendMessage('assistant', data.response);
                     updateTokenInfo(data.current_tokens, data.max_tokens);
                 } else {
@@ -174,6 +116,7 @@
                 appendMessage('system', '发送失败: ' + error.message);
             } finally {
                 isProcessing = false;
+                sendButton.disabled = false;
             }
         }
 
@@ -189,27 +132,19 @@
             document.getElementById('max-tokens').textContent = max;
         }
 
-        function updateUserInfo(userId) {
-            document.getElementById('current-user-id').textContent = userId;
-        }
-
         async function clearChat() {
             try {
-                const userId = document.getElementById('current-user-id').textContent;
                 const response = await fetch('/clear_chat', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ user_id: userId })
+                    }
                 });
                 
                 const data = await response.json();
                 
                 if (response.ok) {
-                    // 清空消息容器
                     messageContainer.innerHTML = '';
-                    // 更新token信息
                     updateTokenInfo(data.current_tokens, data.max_tokens);
                     appendMessage('system', '对话已清除');
                 } else {

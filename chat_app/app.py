@@ -1,31 +1,43 @@
-from flask import Flask, render_template, request, jsonify, session, redirect
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from openai import OpenAI
 import tiktoken
 import os
 import logging
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import uuid
 import traceback
 import json
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from models import db, User, ChatHistory
 
 # 设置日志
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+app = Flask(__name__, 
+    template_folder='templates',  # 指定模板目录
+    static_folder='static'        # 指定静态文件目录
+)
 
 # 会话配置
 app.config.update(
+    SECRET_KEY='your-secret-key',  # 更改为安全的密钥
     SESSION_COOKIE_HTTPONLY=True,
     PERMANENT_SESSION_LIFETIME=timedelta(days=7)
 )
-app.secret_key = 'your-fixed-secret-key'  # 请在生产环境中使用安全的密钥
 
 # 数据库配置
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+
+# 初始化数据库
+db.init_app(app)
+
+# 初始化 Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
 
 # 检查 API 密钥
 api_key = os.getenv('OPENAI_API_KEY')
@@ -73,127 +85,60 @@ def trim_messages(messages, max_tokens):
             break
     return messages
 
-class ChatHistory(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String(36), unique=True, nullable=False)  # 确保user_id是唯一的
-    messages = db.Column(db.JSON, nullable=False, default=list)
-    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-    def __init__(self, user_id, messages=None, last_updated=None):
-        self.user_id = user_id
-        self.messages = messages or [SYSTEM_MESSAGE]
-        self.last_updated = last_updated or datetime.utcnow()
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
 
 @app.before_request
 def before_request():
     """请求预处理：检查会话是否过期"""
-    if request.endpoint in ['static', 'create_id', 'switch_id', 'default_home', 'user_chat', 'get_chat_history', 'clear_chat']:  # 添加 clear_chat
+    if request.endpoint in ['static', 'login', 'register', 'logout']:
         return
     
-    if 'user_id' not in session:
-        return jsonify({"error": "请先创建或切换到有效的用户ID"}), 401
+    if not current_user.is_authenticated:
+        # 修改检测AJAX请求的方法
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({"error": "请先登录"}), 401
+        return redirect(url_for('login'))
 
 @app.route('/')
-def default_home():
-    """默认主页，重定向到新用户ID"""
-    new_id = str(uuid.uuid4())
-    return redirect(f'/{new_id}')
-
-@app.route('/<user_id>')
-def user_chat(user_id):
-    """特定用户的聊天页面"""
-    return render_template('chat.html', user_id=user_id)
-
-@app.route('/create_id', methods=['POST'])
-def create_id():
-    """创建新的用户ID"""
-    try:
-        new_id = str(uuid.uuid4())
-        chat_history = ChatHistory(
-            user_id=new_id,
-            messages=[SYSTEM_MESSAGE]
-        )
-        db.session.add(chat_history)
-        db.session.commit()
-        
-        return jsonify({
-            "user_id": new_id,
-            "redirect_url": f"/{new_id}"
-        })
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Error creating chat history: {str(e)}")
-        return jsonify({"error": "创建聊天历史失败"}), 500
-
-@app.route('/switch_id', methods=['POST'])
-def switch_id():
-    """切换到已有的用户ID"""
-    new_id = request.json.get('user_id')
-    if not new_id:
-        return jsonify({"error": "未提供用户ID"}), 400
-        
-    chat_history = ChatHistory.query.filter_by(user_id=new_id).first()
-    if not chat_history:
-        return jsonify({"error": "ID不存在"}), 404
-        
-    session['user_id'] = new_id
-    return jsonify({
-        "user_id": new_id,
-        "redirect_url": f"/{new_id}"
-    })
+@login_required
+def chat():
+    """聊天页面"""
+    return render_template('chat.html')
 
 @app.route('/get_chat_history')
+@login_required
 def get_chat_history():
     """获取聊天历史"""
     try:
-        user_id = request.args.get('user_id')  # 使用URL参数中的user_id
-        if not user_id:
-            return jsonify({"error": "Missing user_id"}), 400
-
-        chat_history = ChatHistory.query.filter_by(user_id=user_id).first()
+        chat_history = ChatHistory.query.filter_by(user_id=current_user.chat_id).first()
         if not chat_history:
-            return jsonify({"error": "Chat history not found"}), 404
-
-        messages = chat_history.messages if isinstance(chat_history.messages, list) else [SYSTEM_MESSAGE]
-        current_tokens = num_tokens_from_messages(messages)
-        
-        logger.debug(f"Fetching chat history for user {user_id}, found {len(messages)} messages")
-        
+            return jsonify({"error": "聊天历史不存在"}), 404
+            
         return jsonify({
-            "messages": messages,
-            "current_tokens": current_tokens,
-            "max_tokens": MAX_TOKENS,
-            "user_id": user_id
+            "messages": chat_history.messages,
+            "current_tokens": num_tokens_from_messages(chat_history.messages),
+            "max_tokens": MAX_TOKENS
         })
-
+        
     except Exception as e:
-        logger.error(f"Error getting chat history: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"error": f"获取聊天历史失败: {str(e)}"}), 500
+        logger.error(f"Error getting chat history: {str(e)}")
+        return jsonify({"error": "获取聊天历史失败"}), 500
 
 @app.route('/chat', methods=['POST'])
-def chat():
+@login_required
+def chat_message():
     """处理聊天请求"""
     try:
-        user_id = request.json.get('user_id')  # 从请求中获取user_id
-        if not user_id:
-            return jsonify({"error": "Missing user_id"}), 400
-            
-        # 确保为当前用户获取正确的聊天历史
-        chat_history = ChatHistory.query.filter_by(user_id=user_id).first()
+        # 使用当前用户的chat_id
+        chat_history = ChatHistory.query.filter_by(user_id=current_user.chat_id).first()
         if not chat_history:
-            # 为新用户创建聊天历史
-            chat_history = ChatHistory(
-                user_id=user_id,
-                messages=[SYSTEM_MESSAGE],
-                last_updated=datetime.utcnow()
-            )
-            db.session.add(chat_history)
-            db.session.commit()
-        
-        # 获取用户消息
+            return jsonify({"error": "聊天历史不存在"}), 404
+            
         user_message = request.json.get('message', '')
         
-        # 构建当前用户的消息列表
+        # 构建当前户的消息列表
         current_messages = []
         if isinstance(chat_history.messages, list):
             current_messages = chat_history.messages.copy()
@@ -231,18 +176,15 @@ def chat():
         })
         
     except Exception as e:
-        logger.error(f"Chat error for user {user_id}: {str(e)}\n{traceback.format_exc()}")
+        logger.error(f"Chat error for user {current_user.chat_id}: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": f"服务器错误: {str(e)}"}), 500
 
 @app.route('/clear_chat', methods=['POST'])
+@login_required
 def clear_chat():
     """清除聊天历史"""
     try:
-        user_id = request.json.get('user_id')
-        if not user_id:
-            return jsonify({"error": "Missing user_id"}), 400
-            
-        chat_history = ChatHistory.query.filter_by(user_id=user_id).first()
+        chat_history = ChatHistory.query.filter_by(user_id=current_user.chat_id).first()
         if not chat_history:
             return jsonify({"error": "Chat history not found"}), 404
             
@@ -258,10 +200,82 @@ def clear_chat():
         })
         
     except Exception as e:
-        logger.error(f"Error clearing chat history: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"error": f"清除聊天历史失败: {str(e)}"}), 500
+        logger.error(f"Error clearing chat history: {str(e)}")
+        return jsonify({"error": "清除聊天历史失败"}), 500
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'GET':
+        if current_user.is_authenticated:
+            return redirect(url_for('chat'))
+        return render_template('login.html')
+    
+    data = request.json
+    user = User.query.filter_by(username=data.get('username')).first()
+    
+    if user and user.check_password(data.get('password')):
+        login_user(user)
+        next_page = request.args.get('next')
+        if next_page:
+            return jsonify({"redirect_url": next_page})
+        return jsonify({"redirect_url": url_for('chat')})
+    
+    return jsonify({"error": "用户名或密码错误"}), 401
+
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json
+    
+    if User.query.filter_by(username=data.get('username')).first():
+        return jsonify({"error": "用户名已存在"}), 400
+        
+    try:
+        # 创建新用户
+        user = User(username=data.get('username'))
+        user.set_password(data.get('password'))
+        
+        # 创建用户的聊天历史
+        chat_history = ChatHistory(
+            user_id=user.chat_id,
+            messages=[SYSTEM_MESSAGE]
+        )
+        
+        db.session.add(user)
+        db.session.add(chat_history)
+        db.session.commit()
+        
+        login_user(user)
+        return jsonify({"redirect_url": url_for('chat')})
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Registration error: {str(e)}")
+        return jsonify({"error": "注册失败"}), 500
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))  # 使用 url_for
+
+def is_ajax_request():
+    return request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+@app.errorhandler(404)
+def page_not_found(e):
+    if is_ajax_request():
+        return jsonify({"error": "页面不存在"}), 404
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    if is_ajax_request():
+        return jsonify({"error": "服务器内部错误"}), 500
+    return render_template('500.html'), 500
 
 if __name__ == '__main__':
     with app.app_context():
+        # 删除所有表
+        db.drop_all()
+        # 重新创建所有表
         db.create_all()
     app.run(debug=True, host='127.0.0.1', port=5000) 

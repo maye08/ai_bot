@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>登录/注册 - AI Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .auth-container {
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .auth-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .auth-tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: #666;
+        }
+        
+        .auth-tab.active {
+            color: #1976d2;
+            border-bottom: 2px solid #1976d2;
+        }
+        
+        .auth-form {
+            display: none;
+        }
+        
+        .auth-form.active {
+            display: block;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        
+        .error-message {
+            color: #d32f2f;
+            margin-top: 10px;
+        }
+        
+        button[type="submit"] {
+            width: 100%;
+            padding: 10px;
+            background-color: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        button[type="submit"]:hover {
+            background-color: #1565c0;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-tabs">
+            <button class="auth-tab active" onclick="switchTab('login')">登录</button>
+            <button class="auth-tab" onclick="switchTab('register')">注册</button>
+        </div>
+        
+        <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <input type="text" name="username" placeholder="用户名" required>
+            </div>
+            <div class="form-group">
+                <input type="password" name="password" placeholder="密码" required>
+            </div>
+            <button type="submit">登录</button>
+            <div class="error-message" id="login-error"></div>
+        </form>
+        
+        <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+            <div class="form-group">
+                <input type="text" name="username" placeholder="用户名" required>
+            </div>
+            <div class="form-group">
+                <input type="password" name="password" placeholder="密码" required>
+            </div>
+            <div class="form-group">
+                <input type="password" name="confirm_password" placeholder="确认密码" required>
+            </div>
+            <button type="submit">注册</button>
+            <div class="error-message" id="register-error"></div>
+        </form>
+    </div>
+
+    <script>
+        function switchTab(tab) {
+            document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+            
+            document.querySelector(`.auth-tab[onclick="switchTab('${tab}')"]`).classList.add('active');
+            document.getElementById(`${tab}-form`).classList.add('active');
+        }
+        
+        async function handleLogin(event) {
+            event.preventDefault();
+            const form = event.target;
+            const errorDiv = document.getElementById('login-error');
+            
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: form.username.value,
+                        password: form.password.value
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    window.location.href = data.redirect_url;
+                } else {
+                    errorDiv.textContent = data.error || '登录失败';
+                }
+            } catch (error) {
+                errorDiv.textContent = '登录失败：' + error.message;
+            }
+        }
+        
+        function validatePassword(password) {
+            if (password.length < 8) {
+                return "密码长度至少为8位";
+            }
+            if (!/[A-Z]/.test(password)) {
+                return "密码必须包含大写字母";
+            }
+            if (!/[a-z]/.test(password)) {
+                return "密码必须包含小写字母";
+            }
+            if (!/[0-9]/.test(password)) {
+                return "密码必须包含数字";
+            }
+            return null;
+        }
+        
+        async function handleRegister(event) {
+            event.preventDefault();
+            const form = event.target;
+            const errorDiv = document.getElementById('register-error');
+            
+            const passwordError = validatePassword(form.password.value);
+            if (passwordError) {
+                errorDiv.textContent = passwordError;
+                return;
+            }
+            
+            if (form.password.value !== form.confirm_password.value) {
+                errorDiv.textContent = '两次输入的密码不一致';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: form.username.value,
+                        password: form.password.value
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    window.location.href = data.redirect_url;
+                } else {
+                    errorDiv.textContent = data.error || '注册失败';
+                }
+            } catch (error) {
+                errorDiv.textContent = '注册失败：' + error.message;
+            }
+        }
+    </script>
+</body>
+</html> 
