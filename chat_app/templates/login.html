@@ -34,6 +34,7 @@
         
         .auth-form {
             display: none;
+            padding-bottom: 20px;
         }
         
         .auth-form.active {
@@ -42,6 +43,7 @@
         
         .form-group {
             margin-bottom: 15px;
+            position: relative;
         }
         
         .form-group input {
@@ -55,6 +57,10 @@
         .error-message {
             color: #d32f2f;
             margin-top: 10px;
+            padding: 10px;
+            background-color: #ffebee;
+            border-radius: 4px;
+            display: none;
         }
         
         button[type="submit"] {
@@ -69,6 +75,40 @@
         
         button[type="submit"]:hover {
             background-color: #1565c0;
+        }
+        
+        .captcha-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        
+        .captcha-group input {
+            flex: 1;
+            min-width: 100px;
+            max-width: 150px;
+        }
+        
+        .captcha-image {
+            height: 38px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f5f5f5;
+        }
+        
+        .refresh-captcha {
+            padding: 8px;
+            height: 38px;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        
+        .refresh-captcha:hover {
+            background: #e0e0e0;
         }
     </style>
 </head>
@@ -86,6 +126,11 @@
             <div class="form-group">
                 <input type="password" name="password" placeholder="密码" required>
             </div>
+            <div class="form-group captcha-group">
+                <input type="text" name="captcha" placeholder="验证码" required maxlength="4">
+                <img id="login-captcha" class="captcha-image" alt="验证码" src="">
+                <button type="button" class="refresh-captcha" onclick="refreshCaptcha('login')">刷新</button>
+            </div>
             <button type="submit">登录</button>
             <div class="error-message" id="login-error"></div>
         </form>
@@ -100,26 +145,80 @@
             <div class="form-group">
                 <input type="password" name="confirm_password" placeholder="确认密码" required>
             </div>
+            <div class="form-group captcha-group">
+                <input type="text" name="captcha" placeholder="验证码" required maxlength="4">
+                <img id="register-captcha" class="captcha-image" alt="验证码" src="">
+                <button type="button" class="refresh-captcha" onclick="refreshCaptcha('register')">刷新</button>
+            </div>
             <button type="submit">注册</button>
             <div class="error-message" id="register-error"></div>
         </form>
     </div>
 
     <script>
+        async function refreshCaptcha(formType) {
+            try {
+                const captchaImg = document.getElementById(`${formType}-captcha`);
+                const errorDiv = document.getElementById(`${formType}-error`);
+                
+                // 显示加载状态
+                captchaImg.style.opacity = '0.5';
+                captchaImg.style.filter = 'blur(1px)';
+                
+                const response = await fetch('/get_captcha');
+                
+                if (!response.ok) {
+                    throw new Error('验证码加载失败');
+                }
+                
+                const data = await response.json();
+                
+                if (data.image) {
+                    captchaImg.src = data.image;
+                    captchaImg.style.opacity = '1';
+                    captchaImg.style.filter = 'none';
+                } else {
+                    throw new Error('验证码数据无效');
+                }
+            } catch (error) {
+                console.error('Error refreshing captcha:', error);
+                const errorDiv = document.getElementById(`${formType}-error`);
+                if (errorDiv) {
+                    errorDiv.textContent = '验证码加载失败，请点击刷新重试';
+                    errorDiv.style.display = 'block';
+                }
+            }
+        }
+        
+        // 确保页面加载完成后加载验证码
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshCaptcha('login');
+            refreshCaptcha('register');
+        });
+        
         function switchTab(tab) {
             document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
             
             document.querySelector(`.auth-tab[onclick="switchTab('${tab}')"]`).classList.add('active');
             document.getElementById(`${tab}-form`).classList.add('active');
+            
+            refreshCaptcha(tab);
         }
         
         async function handleLogin(event) {
             event.preventDefault();
             const form = event.target;
             const errorDiv = document.getElementById('login-error');
+            const submitButton = form.querySelector('button[type="submit"]');
+            
+            // 清除之前的错误信息
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
             
             try {
+                submitButton.disabled = true;
+                
                 const response = await fetch('/login', {
                     method: 'POST',
                     headers: {
@@ -127,7 +226,8 @@
                     },
                     body: JSON.stringify({
                         username: form.username.value,
-                        password: form.password.value
+                        password: form.password.value,
+                        captcha: form.captcha.value
                     })
                 });
                 
@@ -137,9 +237,15 @@
                     window.location.href = data.redirect_url;
                 } else {
                     errorDiv.textContent = data.error || '登录失败';
+                    errorDiv.style.display = 'block';  // 确保错误信息显示
+                    refreshCaptcha('login');
                 }
             } catch (error) {
                 errorDiv.textContent = '登录失败：' + error.message;
+                errorDiv.style.display = 'block';  // 确保错误信息显示
+                refreshCaptcha('login');
+            } finally {
+                submitButton.disabled = false;
             }
         }
         
@@ -163,19 +269,26 @@
             event.preventDefault();
             const form = event.target;
             const errorDiv = document.getElementById('register-error');
+            const submitButton = form.querySelector('button[type="submit"]');
             
+            // 密码验证
             const passwordError = validatePassword(form.password.value);
             if (passwordError) {
                 errorDiv.textContent = passwordError;
+                errorDiv.style.display = 'block';
                 return;
             }
             
             if (form.password.value !== form.confirm_password.value) {
                 errorDiv.textContent = '两次输入的密码不一致';
+                errorDiv.style.display = 'block';
                 return;
             }
             
             try {
+                // 禁用提交按钮，防止重复提交
+                submitButton.disabled = true;
+                
                 const response = await fetch('/register', {
                     method: 'POST',
                     headers: {
@@ -183,7 +296,8 @@
                     },
                     body: JSON.stringify({
                         username: form.username.value,
-                        password: form.password.value
+                        password: form.password.value,
+                        captcha: form.captcha.value
                     })
                 });
                 
@@ -193,9 +307,15 @@
                     window.location.href = data.redirect_url;
                 } else {
                     errorDiv.textContent = data.error || '注册失败';
+                    errorDiv.style.display = 'block';  // 显示错误信息
+                    refreshCaptcha('register');
                 }
             } catch (error) {
                 errorDiv.textContent = '注册失败：' + error.message;
+                errorDiv.style.display = 'block';  // 显示错误信息
+                refreshCaptcha('register');
+            } finally {
+                submitButton.disabled = false;  // 重新启用提交按钮
             }
         }
     </script>

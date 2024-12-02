@@ -10,6 +10,11 @@ import json
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, ChatHistory
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+import random
+import string
+import base64
 
 # 设置日志
 logging.basicConfig(level=logging.DEBUG)
@@ -92,11 +97,11 @@ def load_user(user_id):
 @app.before_request
 def before_request():
     """请求预处理：检查会话是否过期"""
-    if request.endpoint in ['static', 'login', 'register', 'logout']:
+    # 添加 get_captcha 到白名单
+    if request.endpoint in ['static', 'login', 'register', 'logout', 'get_captcha']:
         return
     
     if not current_user.is_authenticated:
-        # 修改检测AJAX请求的方法
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({"error": "请先登录"}), 401
         return redirect(url_for('login'))
@@ -203,6 +208,69 @@ def clear_chat():
         logger.error(f"Error clearing chat history: {str(e)}")
         return jsonify({"error": "清除聊天历史失败"}), 500
 
+# 生成验证码图片
+def generate_captcha():
+    # 生成随机字符串
+    chars = string.ascii_letters + string.digits
+    code = ''.join(random.choices(chars, k=4))
+    
+    # 创建图片
+    width = 120
+    height = 40
+    image = Image.new('RGB', (width, height), color='white')
+    draw = ImageDraw.Draw(image)
+    
+    try:
+        # 尝试使用系统字体
+        font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 24)
+    except:
+        try:
+            # Windows 系统字体
+            font = ImageFont.truetype('arial.ttf', 24)
+        except:
+            # 如果都失败了，使用默认字体
+            font = ImageFont.load_default()
+    
+    # 添加干扰线
+    for i in range(5):
+        x1 = random.randint(0, width)
+        y1 = random.randint(0, height)
+        x2 = random.randint(0, width)
+        y2 = random.randint(0, height)
+        draw.line([(x1, y1), (x2, y2)], fill='gray')
+    
+    # 添加噪点
+    for _ in range(30):
+        x = random.randint(0, width)
+        y = random.randint(0, height)
+        draw.point((x, y), fill='black')
+    
+    # 添加验证码文字
+    for i, char in enumerate(code):
+        x = 20 + i * 20
+        y = random.randint(5, 15)
+        # 随机颜色
+        color = (random.randint(0, 100), random.randint(0, 100), random.randint(0, 100))
+        draw.text((x, y), char, font=font, fill=color)
+    
+    # 转换为base64
+    buffer = BytesIO()
+    image.save(buffer, format='PNG')
+    img_str = base64.b64encode(buffer.getvalue()).decode()
+    
+    return code, f'data:image/png;base64,{img_str}'
+
+@app.route('/get_captcha')
+def get_captcha():
+    try:
+        code, image = generate_captcha()
+        session['captcha'] = code
+        return jsonify({'image': image})
+    except Exception as e:
+        logger.error(f"Error generating captcha: {str(e)}")
+        return jsonify({"error": "验证码生成失败"}), 500
+
+# 修改登录路由
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'GET':
@@ -211,20 +279,25 @@ def login():
         return render_template('login.html')
     
     data = request.json
+    captcha = data.get('captcha', '').upper()
+    if 'captcha' not in session or captcha != session['captcha'].upper():
+        return jsonify({"error": "验证码错误"}), 400
+        
     user = User.query.filter_by(username=data.get('username')).first()
-    
     if user and user.check_password(data.get('password')):
         login_user(user)
-        next_page = request.args.get('next')
-        if next_page:
-            return jsonify({"redirect_url": next_page})
+        session.pop('captcha', None)  # 清除验证码
         return jsonify({"redirect_url": url_for('chat')})
     
     return jsonify({"error": "用户名或密码错误"}), 401
 
+# 修改注册路由
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
+    captcha = data.get('captcha', '').upper()
+    if 'captcha' not in session or captcha != session['captcha'].upper():
+        return jsonify({"error": "验证码错误"}), 400
     
     if User.query.filter_by(username=data.get('username')).first():
         return jsonify({"error": "用户名已存在"}), 400
@@ -234,7 +307,6 @@ def register():
         user = User(username=data.get('username'))
         user.set_password(data.get('password'))
         
-        # 创建用户的聊天历史
         chat_history = ChatHistory(
             user_id=user.chat_id,
             messages=[SYSTEM_MESSAGE]
@@ -245,6 +317,7 @@ def register():
         db.session.commit()
         
         login_user(user)
+        session.pop('captcha', None)  # 清除验证码
         return jsonify({"redirect_url": url_for('chat')})
     except Exception as e:
         db.session.rollback()
@@ -274,8 +347,6 @@ def internal_server_error(e):
 
 if __name__ == '__main__':
     with app.app_context():
-        # 删除所有表
-        db.drop_all()
-        # 重新创建所有表
+        # 只在首次运行时创建表
         db.create_all()
-    app.run(debug=True, host='127.0.0.1', port=5000) 
+    app.run(debug=True, host='0.0.0.0', port=5000) 
