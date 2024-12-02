@@ -432,7 +432,9 @@ def get_chat_session(session_id):
             return jsonify({"error": "对话不存在"}), 404
             
         return jsonify({
-            "messages": session.messages
+            "messages": session.messages,
+            "current_tokens": num_tokens_from_messages(session.messages),
+            "max_context_length": MAX_CONTEXT_LENGTH
         })
     except Exception as e:
         logger.error(f"Error getting chat session: {str(e)}")

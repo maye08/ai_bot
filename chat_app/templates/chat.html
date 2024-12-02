@@ -310,10 +310,12 @@
                             appendMessage(msg.role, msg.content);
                         }
                     });
+                    updateTokenInfo(data.current_tokens, data.max_context_length);
                     await loadChatList();
                 }
             } catch (error) {
                 console.error('Error switching session:', error);
+                appendMessage('system', '切换对话失败: ' + error.message);
             }
         }
     </script>
