@@ -17,22 +17,30 @@
     </div>
 
     <div class="chat-container">
-        <div id="message-container" class="message-container"></div>
-        <div class="input-container">
-            <select id="model-select">
-                <option value="gpt-4o-mini">gpt-4o-mini</option>
-                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-                <option value="gpt-4o">gpt-4o</option>
-                <option value="o1-mini">o1-mini</option>
-                <option value="o1-preview">o1-preview</option>
-                <option value="dall-e-3">dall-e-3</option>
-            </select>
-            <input type="text" id="user-input" placeholder="输入消息..." onkeypress="handleKeyPress(event)">
-            <button onclick="sendMessage()">发送</button>
-            <button onclick="clearChat()">清除对话</button>
+        <div class="chat-sidebar">
+            <button onclick="createNewChat()" class="new-chat-btn">新建对话</button>
+            <div id="chat-list" class="chat-list">
+                <!-- 对话列表将在这里动态加载 -->
+            </div>
         </div>
-        <div class="token-info">
-            已用上下文长度: <span id="current-tokens">0</span> / <span id="max-context-length">128000</span>
+        <div class="chat-main">
+            <div id="message-container" class="message-container"></div>
+            <div class="input-container">
+                <select id="model-select">
+                    <option value="gpt-4o-mini">gpt-4o-mini</option>
+                    <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="o1-mini">o1-mini</option>
+                    <option value="o1-preview">o1-preview</option>
+                    <option value="dall-e-3">dall-e-3</option>
+                </select>
+                <input type="text" id="user-input" placeholder="输入消息..." onkeypress="handleKeyPress(event)">
+                <button onclick="sendMessage()">发送</button>
+                <button onclick="clearChat()">清除对话</button>
+            </div>
+            <div class="token-info">
+                已用上下文长度: <span id="current-tokens">0</span> / <span id="max-context-length">128000</span>
+            </div>
         </div>
     </div>
 
@@ -40,6 +48,7 @@
         const messageContainer = document.getElementById('message-container');
         let isProcessing = false;
         let isLoading = false;
+        let currentSessionId = null;
 
         async function loadChatHistory() {
             if (isLoading) return;
@@ -115,6 +124,10 @@
 
         async function sendMessage() {
             if (isProcessing || isLoading) return;
+            if (!currentSessionId) {
+                appendMessage('system', '请先创建新对话');
+                return;
+            }
 
             const input = document.getElementById('user-input');
             const message = input.value.trim();
@@ -132,7 +145,11 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ message: message, model: model })
+                    body: JSON.stringify({ 
+                        message: message, 
+                        model: model,
+                        session_id: currentSessionId 
+                    })
                 });
 
                 const data = await response.json();
@@ -144,6 +161,7 @@
                     if (data.current_tokens !== undefined) {
                         updateTokenInfo(data.current_tokens, data.max_context_length);
                     }
+                    await loadChatList(); // 更新对话列表
                 } else {
                     appendMessage('system', '发送失败: ' + (data.error || '未知错误'));
                 }
@@ -169,8 +187,13 @@
         }
 
         async function clearChat() {
+            if (!currentSessionId) {
+                appendMessage('system', '请先创建新对话');
+                return;
+            }
+            
             try {
-                const response = await fetch('/clear_chat', {
+                const response = await fetch(`/clear_chat_session/${currentSessionId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -181,8 +204,9 @@
                 
                 if (response.ok) {
                     messageContainer.innerHTML = '';
-                    updateTokenInfo(data.current_tokens, data.max_context_length);
+                    updateTokenInfo(0, MAX_CONTEXT_LENGTH);
                     appendMessage('system', '对话已清除');
+                    await loadChatList();
                 } else {
                     appendMessage('system', '清除对话失败: ' + (data.error || '未知错误'));
                 }
@@ -230,6 +254,67 @@
 
         // 页面加载完成后加载模型列表
         window.onload = loadModels;
+
+        async function loadChatList() {
+            try {
+                const response = await fetch('/get_chat_sessions');
+                const data = await response.json();
+                
+                const chatList = document.getElementById('chat-list');
+                chatList.innerHTML = '';
+                
+                data.sessions.forEach(session => {
+                    const chatItem = document.createElement('div');
+                    chatItem.className = `chat-item ${session.id === currentSessionId ? 'active' : ''}`;
+                    chatItem.onclick = () => switchSession(session.id);
+                    
+                    // 获取最后一条消息的前10个字符
+                    const title = session.last_message || '新对话';
+                    chatItem.textContent = title.length > 10 ? title.substring(0, 10) + '...' : title;
+                    
+                    chatList.appendChild(chatItem);
+                });
+            } catch (error) {
+                console.error('Error loading chat list:', error);
+            }
+        }
+
+        async function createNewChat() {
+            try {
+                const response = await fetch('/create_chat_session', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    currentSessionId = data.session_id;
+                    messageContainer.innerHTML = '';
+                    await loadChatList();
+                }
+            } catch (error) {
+                console.error('Error creating new chat:', error);
+            }
+        }
+
+        async function switchSession(sessionId) {
+            try {
+                const response = await fetch(`/get_chat_session/${sessionId}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    currentSessionId = sessionId;
+                    messageContainer.innerHTML = '';
+                    data.messages.forEach(msg => {
+                        if (msg.role !== 'system') {
+                            appendMessage(msg.role, msg.content);
+                        }
+                    });
+                    await loadChatList();
+                }
+            } catch (error) {
+                console.error('Error switching session:', error);
+            }
+        }
     </script>
 </body>
 </html>

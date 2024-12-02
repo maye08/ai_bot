@@ -36,3 +36,12 @@ class ChatHistory(db.Model):
         self.user_id = user_id
         self.messages = messages or []
         self.last_updated = datetime.utcnow()
+
+class ChatSession(db.Model):
+    __tablename__ = 'chat_sessions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(36), nullable=False)
+    messages = db.Column(db.JSON, nullable=False, default=list)
+    last_message = db.Column(db.String(255))  # 存储最后一条用户消息
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

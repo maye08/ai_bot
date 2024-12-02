@@ -9,7 +9,7 @@ import traceback
 import json
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from models.database_models import db, User, ChatHistory
+from models.database_models import db, User, ChatHistory, ChatSession
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 import random
@@ -152,9 +152,14 @@ def get_models():
 def chat_message():
     """处理聊天请求"""
     try:
-        chat_history = ChatHistory.query.filter_by(user_id=current_user.chat_id).first()
-        if not chat_history:
-            return jsonify({"error": "聊天历史不存在"}), 404
+        session_id = request.json.get('session_id')
+        chat_session = ChatSession.query.filter_by(
+            id=session_id,
+            user_id=current_user.chat_id
+        ).first()
+        
+        if not chat_session:
+            return jsonify({"error": "对话不存在"}), 404
             
         user_message = request.json.get('message', '')
         model_id = request.json.get('model', 'gpt-3.5-turbo')
@@ -166,12 +171,12 @@ def chat_message():
         
         try:
             if model_config.model_type == ModelType.TEXT:
-                current_messages = chat_history.messages.copy() if isinstance(chat_history.messages, list) else [SYSTEM_MESSAGE]
+                current_messages = chat_session.messages.copy() if isinstance(chat_session.messages, list) else [SYSTEM_MESSAGE]
                 current_messages.append({"role": "user", "content": user_message})
                 
-                params = model_config.params.copy()  # 创建参数的副本
+                params = model_config.params.copy()
                 if 'max_output_tokens' in params:
-                    params['max_tokens'] = params.pop('max_output_tokens')  # 替换参数名
+                    params['max_tokens'] = params.pop('max_output_tokens')
                 
                 response = model_processor.process_text(
                     messages=current_messages,
@@ -180,8 +185,9 @@ def chat_message():
                 )
                 
                 current_messages.append({"role": "assistant", "content": response["content"]})
-                chat_history.messages = current_messages
-                chat_history.last_updated = datetime.utcnow()
+                chat_session.messages = current_messages
+                chat_session.last_message = user_message  # 更新最后一条消息
+                chat_session.last_updated = datetime.utcnow()
                 db.session.commit()
                 
                 return jsonify({
@@ -198,6 +204,11 @@ def chat_message():
                     **model_config.params
                 )
                 
+                # 保存图片生成记录
+                chat_session.last_message = user_message
+                chat_session.last_updated = datetime.utcnow()
+                db.session.commit()
+                
                 return jsonify({
                     "type": response["type"],
                     "response": response["content"]
@@ -206,7 +217,7 @@ def chat_message():
         except Exception as e:
             logger.error(f"Model processing error: {str(e)}")
             return jsonify({"error": f"模型处理错误: {str(e)}"}), 500
-
+            
     except Exception as e:
         logger.error(f"Chat error for user {current_user.chat_id}: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": f"服务器错误: {str(e)}"}), 500
@@ -371,6 +382,61 @@ def internal_server_error(e):
     if is_ajax_request():
         return jsonify({"error": "服务器内部错误"}), 500
     return render_template('500.html'), 500
+
+@app.route('/create_chat_session', methods=['POST'])
+@login_required
+def create_chat_session():
+    try:
+        session = ChatSession(
+            user_id=current_user.chat_id,
+            messages=[SYSTEM_MESSAGE]
+        )
+        db.session.add(session)
+        db.session.commit()
+        
+        return jsonify({
+            "session_id": session.id
+        })
+    except Exception as e:
+        logger.error(f"Error creating chat session: {str(e)}")
+        return jsonify({"error": "创建对话失败"}), 500
+
+@app.route('/get_chat_sessions')
+@login_required
+def get_chat_sessions():
+    try:
+        sessions = ChatSession.query.filter_by(
+            user_id=current_user.chat_id
+        ).order_by(ChatSession.last_updated.desc()).all()
+        
+        return jsonify({
+            "sessions": [{
+                "id": session.id,
+                "last_message": session.last_message
+            } for session in sessions]
+        })
+    except Exception as e:
+        logger.error(f"Error getting chat sessions: {str(e)}")
+        return jsonify({"error": "获取对话列表失败"}), 500
+
+@app.route('/get_chat_session/<int:session_id>')
+@login_required
+def get_chat_session(session_id):
+    try:
+        session = ChatSession.query.filter_by(
+            id=session_id,
+            user_id=current_user.chat_id
+        ).first()
+        
+        if not session:
+            return jsonify({"error": "对话不存在"}), 404
+            
+        return jsonify({
+            "messages": session.messages
+        })
+    except Exception as e:
+        logger.error(f"Error getting chat session: {str(e)}")
+        return jsonify({"error": "获取对话失败"}), 500
 
 if __name__ == '__main__':
     with app.app_context():
