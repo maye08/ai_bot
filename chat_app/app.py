@@ -9,12 +9,13 @@ import traceback
 import json
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, ChatHistory
+from models.database_models import db, User, ChatHistory
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 import random
 import string
 import base64
+from models.model_config import ModelProcessor, MODELS_CONFIG, ModelType
 
 # 设置日志
 logging.basicConfig(level=logging.DEBUG)
@@ -52,8 +53,8 @@ if not api_key:
 
 client = OpenAI(api_key=api_key)
 
-# 设置 token 限制
-MAX_TOKENS = 64000
+# 设置对话上下文的最大长度
+MAX_CONTEXT_LENGTH = 128000
 
 # 系统消息
 SYSTEM_MESSAGE = {
@@ -78,9 +79,9 @@ def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
     num_tokens += 2
     return num_tokens
 
-def trim_messages(messages, max_tokens):
+def trim_messages(messages, max_context_length):
     """保留系统消息和最近的对话"""
-    while messages and num_tokens_from_messages(messages) > max_tokens:
+    while messages and num_tokens_from_messages(messages) > max_context_length:
         # 找到第一个非系统消息
         for i, msg in enumerate(messages):
             if msg['role'] != 'system':
@@ -124,62 +125,88 @@ def get_chat_history():
         return jsonify({
             "messages": chat_history.messages,
             "current_tokens": num_tokens_from_messages(chat_history.messages),
-            "max_tokens": MAX_TOKENS
+            "max_tokens": MAX_CONTEXT_LENGTH
         })
         
     except Exception as e:
         logger.error(f"Error getting chat history: {str(e)}")
         return jsonify({"error": "获取聊天历史失败"}), 500
 
+# 初始化模型处理器
+model_processor = ModelProcessor(client)
+
+@app.route('/get_models')
+@login_required
+def get_models():
+    """获取支持的模型列表"""
+    return jsonify({
+        model_id: {
+            "name": model_id,
+            "type": config.model_type.value
+        }
+        for model_id, config in MODELS_CONFIG.items()
+    })
+
 @app.route('/chat', methods=['POST'])
 @login_required
 def chat_message():
     """处理聊天请求"""
     try:
-        # 使用当前用户的chat_id
         chat_history = ChatHistory.query.filter_by(user_id=current_user.chat_id).first()
         if not chat_history:
             return jsonify({"error": "聊天历史不存在"}), 404
             
         user_message = request.json.get('message', '')
+        model_id = request.json.get('model', 'gpt-3.5-turbo')
+
+        if model_id not in MODELS_CONFIG:
+            return jsonify({"error": f"不支持的模型: {model_id}"}), 400
+
+        model_config = MODELS_CONFIG[model_id]
         
-        # 构建当前户的消息列表
-        current_messages = []
-        if isinstance(chat_history.messages, list):
-            current_messages = chat_history.messages.copy()
-        else:
-            current_messages = [SYSTEM_MESSAGE]
-        
-        # 添加当前用户消息
-        current_messages.append({"role": "user", "content": user_message})
-        
-        # 确保不超过token限制
-        if num_tokens_from_messages(current_messages) > MAX_TOKENS - 1000:
-            current_messages = [SYSTEM_MESSAGE] + current_messages
-        
-        # 发送请求到OpenAI
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=current_messages,
-            max_tokens=1000,
-            temperature=0.7
-        )
-        
-        assistant_message = response.choices[0].message.content
-        
-        # 更新当前用户的历史记录
-        current_messages.append({"role": "assistant", "content": assistant_message})
-        chat_history.messages = current_messages
-        chat_history.last_updated = datetime.utcnow()
-        
-        db.session.commit()
-        
-        return jsonify({
-            "response": assistant_message,
-            "current_tokens": num_tokens_from_messages(current_messages),
-            "max_tokens": MAX_TOKENS
-        })
-        
+        try:
+            if model_config.model_type == ModelType.TEXT:
+                current_messages = chat_history.messages.copy() if isinstance(chat_history.messages, list) else [SYSTEM_MESSAGE]
+                current_messages.append({"role": "user", "content": user_message})
+                
+                params = model_config.params.copy()  # 创建参数的副本
+                if 'max_output_tokens' in params:
+                    params['max_tokens'] = params.pop('max_output_tokens')  # 替换参数名
+                
+                response = model_processor.process_text(
+                    messages=current_messages,
+                    model_id=model_id,
+                    **params
+                )
+                
+                current_messages.append({"role": "assistant", "content": response["content"]})
+                chat_history.messages = current_messages
+                chat_history.last_updated = datetime.utcnow()
+                db.session.commit()
+                
+                return jsonify({
+                    "type": response["type"],
+                    "response": response["content"],
+                    "current_tokens": num_tokens_from_messages(current_messages),
+                    "max_tokens": MAX_CONTEXT_LENGTH
+                })
+            
+            elif model_config.model_type == ModelType.IMAGE:
+                response = model_processor.process_image(
+                    prompt=user_message,
+                    model_id=model_id,
+                    **model_config.params
+                )
+                
+                return jsonify({
+                    "type": response["type"],
+                    "response": response["content"]
+                })
+                
+        except Exception as e:
+            logger.error(f"Model processing error: {str(e)}")
+            return jsonify({"error": f"模型处理错误: {str(e)}"}), 500
+
     except Exception as e:
         logger.error(f"Chat error for user {current_user.chat_id}: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": f"服务器错误: {str(e)}"}), 500
@@ -201,7 +228,7 @@ def clear_chat():
         return jsonify({
             "message": "Chat history cleared successfully",
             "current_tokens": num_tokens_from_messages([SYSTEM_MESSAGE]),
-            "max_tokens": MAX_TOKENS
+            "max_context_length": MAX_CONTEXT_LENGTH
         })
         
     except Exception as e:

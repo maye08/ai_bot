@@ -3,6 +3,10 @@
 <head>
     <title>AI Chat</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 </head>
 <body>
     <div class="user-info">
@@ -15,12 +19,20 @@
     <div class="chat-container">
         <div id="message-container" class="message-container"></div>
         <div class="input-container">
+            <select id="model-select">
+                <option value="gpt-4o-mini">gpt-4o-mini</option>
+                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+                <option value="gpt-4o">gpt-4o</option>
+                <option value="o1-mini">o1-mini</option>
+                <option value="o1-preview">o1-preview</option>
+                <option value="dall-e-3">dall-e-3</option>
+            </select>
             <input type="text" id="user-input" placeholder="输入消息..." onkeypress="handleKeyPress(event)">
             <button onclick="sendMessage()">发送</button>
             <button onclick="clearChat()">清除对话</button>
         </div>
         <div class="token-info">
-            已用 Token: <span id="current-tokens">0</span> / <span id="max-tokens">4000</span>
+            已用上下文长度: <span id="current-tokens">0</span> / <span id="max-context-length">128000</span>
         </div>
     </div>
 
@@ -46,7 +58,7 @@
                             appendMessage(msg.role, msg.content);
                         }
                     });
-                    updateTokenInfo(data.current_tokens, data.max_tokens);
+                    updateTokenInfo(data.current_tokens, data.max_context_length);
                     messageContainer.scrollTop = messageContainer.scrollHeight;
                 } else {
                     console.error('Error loading chat history:', data.error);
@@ -60,7 +72,7 @@
             }
         }
 
-        function appendMessage(role, content) {
+        function appendMessage(role, content, type = 'text') {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}-message`;
             
@@ -70,13 +82,34 @@
                                   role === 'assistant' ? 'AI' : 
                                   '系统';
             
-            const contentSpan = document.createElement('span');
-            contentSpan.textContent = content;
+            const contentElement = document.createElement('div');
+            contentElement.className = 'message-content';
+            
+            if (type === 'image') {
+                const img = document.createElement('img');
+                img.src = content;
+                img.alt = 'Generated Image';
+                img.style.maxWidth = '100%';
+                contentElement.appendChild(img);
+            } else {
+                content = content.replace(/\\/g, '\\\\');
+                contentElement.innerHTML = marked.parse(content);
+                renderMathInElement(contentElement, {
+                    delimiters: [
+                        {left: "\\[", right: "\\]", display: true},
+                        {left: "\\(", right: "\\)", display: false},
+                        {left: "$$", right: "$$", display: true},
+                        {left: "$", right: "$", display: false}
+                    ],
+                    throwOnError: false,
+                    output: 'html',
+                    strict: false
+                });
+            }
             
             messageDiv.appendChild(roleLabel);
-            messageDiv.appendChild(contentSpan);
+            messageDiv.appendChild(contentElement);
             messageContainer.appendChild(messageDiv);
-            
             messageContainer.scrollTop = messageContainer.scrollHeight;
         }
 
@@ -85,29 +118,32 @@
 
             const input = document.getElementById('user-input');
             const message = input.value.trim();
-            
+            const model = document.getElementById('model-select').value;
+
             if (!message) return;
-            
+
             const sendButton = document.querySelector('button[onclick="sendMessage()"]');
             sendButton.disabled = true;
             isProcessing = true;
-            
+
             try {
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ message: message })
+                    body: JSON.stringify({ message: message, model: model })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (response.ok) {
                     appendMessage('user', message);
                     input.value = '';
-                    appendMessage('assistant', data.response);
-                    updateTokenInfo(data.current_tokens, data.max_tokens);
+                    appendMessage('assistant', data.response, data.type);
+                    if (data.current_tokens !== undefined) {
+                        updateTokenInfo(data.current_tokens, data.max_context_length);
+                    }
                 } else {
                     appendMessage('system', '发送失败: ' + (data.error || '未知错误'));
                 }
@@ -127,9 +163,9 @@
             }
         }
 
-        function updateTokenInfo(current, max) {
+        function updateTokenInfo(current, maxContext) {
             document.getElementById('current-tokens').textContent = current;
-            document.getElementById('max-tokens').textContent = max;
+            document.getElementById('max-context-length').textContent = maxContext;
         }
 
         async function clearChat() {
@@ -145,7 +181,7 @@
                 
                 if (response.ok) {
                     messageContainer.innerHTML = '';
-                    updateTokenInfo(data.current_tokens, data.max_tokens);
+                    updateTokenInfo(data.current_tokens, data.max_context_length);
                     appendMessage('system', '对话已清除');
                 } else {
                     appendMessage('system', '清除对话失败: ' + (data.error || '未知错误'));
@@ -158,6 +194,42 @@
 
         // 页面加载完成后加载聊天历史
         window.onload = loadChatHistory;
+
+        // 加载模型列表
+        async function loadModels() {
+            try {
+                const response = await fetch('/get_models');
+                const models = await response.json();
+                
+                const modelSelect = document.getElementById('model-select');
+                modelSelect.innerHTML = '';
+                
+                // 定义模型显示顺序
+                const modelOrder = [
+                    "gpt-4o-mini",
+                    "gpt-3.5-turbo",
+                    "gpt-4",
+                    "o1-mini",
+                    "o1-preview",
+                    "dall-e-3"
+                ];
+                
+                // 按照指定顺序添加模型选项
+                modelOrder.forEach(modelId => {
+                    if (models[modelId]) {
+                        const option = document.createElement('option');
+                        option.value = modelId;
+                        option.textContent = `${models[modelId].name} (${models[modelId].type})`;
+                        modelSelect.appendChild(option);
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading models:', error);
+            }
+        }
+
+        // 页面加载完成后加载模型列表
+        window.onload = loadModels;
     </script>
 </body>
 </html>
