@@ -204,8 +204,9 @@
                 
                 if (response.ok) {
                     messageContainer.innerHTML = '';
-                    updateTokenInfo(0, MAX_CONTEXT_LENGTH);
+                    updateTokenInfo(data.current_tokens, data.max_context_length);
                     appendMessage('system', '对话已清除');
+                    currentSessionId = null;
                     await loadChatList();
                 } else {
                     appendMessage('system', '清除对话失败: ' + (data.error || '未知错误'));

@@ -438,6 +438,32 @@ def get_chat_session(session_id):
         logger.error(f"Error getting chat session: {str(e)}")
         return jsonify({"error": "获取对话失败"}), 500
 
+@app.route('/clear_chat_session/<int:session_id>', methods=['POST'])
+@login_required
+def clear_chat_session(session_id):
+    try:
+        chat_session = ChatSession.query.filter_by(
+            id=session_id,
+            user_id=current_user.chat_id
+        ).first()
+        
+        if not chat_session:
+            return jsonify({"error": "对话不存在"}), 404
+        
+        # 删除对话
+        db.session.delete(chat_session)
+        db.session.commit()
+        
+        return jsonify({
+            "message": "对话已清除",
+            "current_tokens": 0,
+            "max_context_length": MAX_CONTEXT_LENGTH
+        })
+        
+    except Exception as e:
+        logger.error(f"Error clearing chat session: {str(e)}")
+        return jsonify({"error": "清除对话失败"}), 500
+
 if __name__ == '__main__':
     with app.app_context():
         # 只在首次运行时创建表
