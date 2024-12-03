@@ -191,8 +191,11 @@ def chat_message():
                 db.session.commit()
                 
                 return jsonify({
-                    "type": response["type"],
-                    "response": response["content"],
+                    "response": {
+                        "type": "text",
+                        "content": response["content"],
+                        "status": "success"
+                    },
                     "current_tokens": num_tokens_from_messages(current_messages),
                     "max_tokens": MAX_CONTEXT_LENGTH
                 })
@@ -204,19 +207,20 @@ def chat_message():
                     **model_config.params
                 )
                 
-                # 保存图片生成记录
-                chat_session.last_message = user_message
-                chat_session.last_updated = datetime.utcnow()
-                db.session.commit()
-                
+                # 直接返回 response，确保它包含 type、content 和 status
                 return jsonify({
-                    "type": response["type"],
-                    "response": response["content"]
+                    "response": response
                 })
                 
         except Exception as e:
-            logger.error(f"Model processing error: {str(e)}")
-            return jsonify({"error": f"模型处理错误: {str(e)}"}), 500
+            logger.error(f"Chat error: {str(e)}")
+            return jsonify({
+                "response": {
+                    "type": "error",
+                    "content": f"处理失败: {str(e)}",
+                    "status": "error"
+                }
+            }), 500
             
     except Exception as e:
         logger.error(f"Chat error for user {current_user.chat_id}: {str(e)}\n{traceback.format_exc()}")
@@ -465,6 +469,29 @@ def clear_chat_session(session_id):
     except Exception as e:
         logger.error(f"Error clearing chat session: {str(e)}")
         return jsonify({"error": "清除对话失败"}), 500
+
+@app.route('/get_image_count/<int:session_id>')
+@login_required
+def get_image_count(session_id):
+    """获取会话中生成的图片数量"""
+    try:
+        chat_session = ChatSession.query.filter_by(
+            id=session_id,
+            user_id=current_user.chat_id
+        ).first()
+        
+        if not chat_session:
+            return jsonify({"count": 0})
+            
+        # 计算图片消息的数量
+        image_count = sum(1 for msg in chat_session.messages 
+                         if msg.get('role') == 'assistant' and msg.get('type') == 'image')
+        
+        return jsonify({"count": image_count})
+        
+    except Exception as e:
+        logger.error(f"Error getting image count: {str(e)}")
+        return jsonify({"count": 0})
 
 if __name__ == '__main__':
     with app.app_context():

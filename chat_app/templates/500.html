@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>服务器错误 - AI Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="error-container">
+        <h1>500 - 服务器错误</h1>
+        <p>抱歉，服务器出现了问题。</p>
+        <a href="{{ url_for('chat') }}" class="back-btn">返回主页</a>
+    </div>
+</body>
+</html> 

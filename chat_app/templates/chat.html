@@ -45,10 +45,25 @@
     </div>
 
     <script>
-        const messageContainer = document.getElementById('message-container');
+        let messageContainer = null;
         let isProcessing = false;
         let isLoading = false;
         let currentSessionId = null;
+
+        function updateTokenInfo(current = 0, maxContext = 0, modelType = 'text') {
+            console.log('Updating token info:', { current, maxContext, modelType });
+            const tokenInfoDiv = document.querySelector('.token-info');
+            if (!tokenInfoDiv) {
+                console.error('Token info div not found');
+                return;
+            }
+            
+            if (modelType === 'image') {
+                tokenInfoDiv.textContent = `已生成图片数量: ${current}`;
+            } else {
+                tokenInfoDiv.innerHTML = `已用上下文长度: <span id="current-tokens">${current}</span> / <span id="max-context-length">${maxContext}</span>`;
+            }
+        }
 
         async function loadChatHistory() {
             if (isLoading) return;
@@ -81,7 +96,7 @@
             }
         }
 
-        function appendMessage(role, content, type = 'text') {
+        function appendMessage(role, content, type = 'text', status = 'success') {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}-message`;
             
@@ -94,32 +109,27 @@
             const contentElement = document.createElement('div');
             contentElement.className = 'message-content';
             
-            if (type === 'image') {
+            if (type === 'image' && status === 'success') {
                 const img = document.createElement('img');
+                img.className = 'message-image';
+                img.alt = '生成的图片';
                 img.src = content;
-                img.alt = 'Generated Image';
-                img.style.maxWidth = '100%';
+                img.onerror = () => {
+                    contentElement.innerHTML = '<div class="error-message">图片加载失败</div>';
+                };
                 contentElement.appendChild(img);
+            } else if (type === 'error' || status === 'error') {
+                contentElement.innerHTML = `<div class="error-message">${content}</div>`;
             } else {
-                content = content.replace(/\\/g, '\\\\');
                 contentElement.innerHTML = marked.parse(content);
-                renderMathInElement(contentElement, {
-                    delimiters: [
-                        {left: "\\[", right: "\\]", display: true},
-                        {left: "\\(", right: "\\)", display: false},
-                        {left: "$$", right: "$$", display: true},
-                        {left: "$", right: "$", display: false}
-                    ],
-                    throwOnError: false,
-                    output: 'html',
-                    strict: false
-                });
             }
             
             messageDiv.appendChild(roleLabel);
             messageDiv.appendChild(contentElement);
             messageContainer.appendChild(messageDiv);
             messageContainer.scrollTop = messageContainer.scrollHeight;
+            
+            return messageDiv;
         }
 
         async function sendMessage() {
@@ -157,11 +167,21 @@
                 if (response.ok) {
                     appendMessage('user', message);
                     input.value = '';
-                    appendMessage('assistant', data.response, data.type);
-                    if (data.current_tokens !== undefined) {
-                        updateTokenInfo(data.current_tokens, data.max_context_length);
+                    appendMessage(
+                        'assistant', 
+                        data.response.content, 
+                        data.response.type, 
+                        data.response.status
+                    );
+                    
+                    const modelType = await getModelType(model);
+                    if (modelType === 'image') {
+                        const imageCount = await getImageCount();
+                        updateTokenInfo(imageCount, 0, 'image');
+                    } else if (data.current_tokens !== undefined) {
+                        updateTokenInfo(data.current_tokens, data.max_context_length, 'text');
                     }
-                    await loadChatList(); // 更新对话列表
+                    await loadChatList();
                 } else {
                     appendMessage('system', '发送失败: ' + (data.error || '未知错误'));
                 }
@@ -181,10 +201,7 @@
             }
         }
 
-        function updateTokenInfo(current, maxContext) {
-            document.getElementById('current-tokens').textContent = current;
-            document.getElementById('max-context-length').textContent = maxContext;
-        }
+        
 
         async function clearChat() {
             if (!currentSessionId) {
@@ -217,8 +234,38 @@
             }
         }
 
-        // 页面加载完成后加载聊天历史
-        window.onload = loadChatHistory;
+        // 修改 window.onload 事件处理
+        window.onload = async function() {
+            try {
+                // 初始化 messageContainer
+                messageContainer = document.getElementById('message-container');
+                if (!messageContainer) {
+                    console.error('messageContainer element not found');
+                    return;
+                }
+
+                // 并行加载模型列表和对话列表
+                await Promise.all([
+                    loadModels(),
+                    loadChatList()
+                ]);
+
+                // 如果有对话列表，自动选择第一个对话
+                const chatList = document.getElementById('chat-list');
+                if (chatList && chatList.firstChild && !chatList.firstChild.classList.contains('empty-message')) {
+                    const firstChatItem = chatList.firstChild;
+                    const sessionId = firstChatItem.getAttribute('data-session-id');
+                    if (sessionId) {
+                        await switchSession(sessionId);
+                    }
+                }
+            } catch (error) {
+                console.error('Error initializing page:', error);
+                if (messageContainer) {
+                    appendMessage('system', '加载失败: ' + error.message);
+                }
+            }
+        };
 
         // 加载模型列表
         async function loadModels() {
@@ -253,30 +300,48 @@
             }
         }
 
-        // 页面加载完成后加载模型列表
-        window.onload = loadModels;
-
         async function loadChatList() {
             try {
                 const response = await fetch('/get_chat_sessions');
                 const data = await response.json();
                 
                 const chatList = document.getElementById('chat-list');
+                if (!chatList) {
+                    console.error('Chat list element not found');
+                    return;
+                }
+                
                 chatList.innerHTML = '';
                 
-                data.sessions.forEach(session => {
-                    const chatItem = document.createElement('div');
-                    chatItem.className = `chat-item ${session.id === currentSessionId ? 'active' : ''}`;
-                    chatItem.onclick = () => switchSession(session.id);
-                    
-                    // 获取最后一条消息的前10个字符
-                    const title = session.last_message || '新对话';
-                    chatItem.textContent = title.length > 10 ? title.substring(0, 10) + '...' : title;
-                    
-                    chatList.appendChild(chatItem);
-                });
+                if (data.sessions && data.sessions.length > 0) {
+                    data.sessions.forEach(session => {
+                        const chatItem = document.createElement('div');
+                        chatItem.className = 'chat-item';
+                        chatItem.setAttribute('data-session-id', session.id);  // 添加 data-session-id 属性
+                        
+                        if (session.id === currentSessionId) {
+                            chatItem.classList.add('active');
+                        }
+                        
+                        chatItem.onclick = () => switchSession(session.id);
+                        
+                        const title = session.last_message || '新对话';
+                        chatItem.textContent = title.length > 20 ? title.substring(0, 20) + '...' : title;
+                        
+                        chatList.appendChild(chatItem);
+                    });
+                } else {
+                    const emptyMessage = document.createElement('div');
+                    emptyMessage.className = 'empty-message';
+                    emptyMessage.textContent = '没有对话历史';
+                    chatList.appendChild(emptyMessage);
+                }
             } catch (error) {
                 console.error('Error loading chat list:', error);
+                const chatList = document.getElementById('chat-list');
+                if (chatList) {
+                    chatList.innerHTML = '<div class="error-message">加载对话列表失败</div>';
+                }
             }
         }
 
@@ -290,33 +355,76 @@
                 if (response.ok) {
                     currentSessionId = data.session_id;
                     messageContainer.innerHTML = '';
-                    await loadChatList();
+                    await loadChatList();  // 重新加载对话列表
+                    await switchSession(currentSessionId);  // 切换到新创建的对话
+                } else {
+                    console.error('Error creating new chat:', data.error);
+                    appendMessage('system', '创建新对话失败: ' + (data.error || '未知错误'));
                 }
             } catch (error) {
                 console.error('Error creating new chat:', error);
+                appendMessage('system', '创建新对话失败: ' + error.message);
             }
         }
 
+        // 修改 switchSession 函数
         async function switchSession(sessionId) {
+            if (!sessionId) return;  // 添加空值检查
+            
             try {
                 const response = await fetch(`/get_chat_session/${sessionId}`);
                 const data = await response.json();
                 
                 if (response.ok) {
                     currentSessionId = sessionId;
-                    messageContainer.innerHTML = '';
-                    data.messages.forEach(msg => {
-                        if (msg.role !== 'system') {
-                            appendMessage(msg.role, msg.content);
+                    
+                    // 清空消息容器
+                    if (messageContainer) {
+                        messageContainer.innerHTML = '';
+                        
+                        // 显示消息
+                        data.messages.forEach(msg => {
+                            if (msg.role !== 'system') {
+                                appendMessage(msg.role, msg.content, msg.type || 'text');
+                            }
+                        });
+                    }
+                    
+                    // 获取当前选中的模型类型
+                    const modelSelect = document.getElementById('model-select');
+                    if (modelSelect) {
+                        const modelType = await getModelType(modelSelect.value);
+                        
+                        if (modelType === 'image') {
+                            const imageCount = await getImageCount(sessionId);
+                            updateTokenInfo(imageCount, 0, 'image');
+                        } else {
+                            updateTokenInfo(data.current_tokens, data.max_context_length, 'text');
                         }
-                    });
-                    updateTokenInfo(data.current_tokens, data.max_context_length);
+                    }
+                    
+                    // 更新对话列表UI
                     await loadChatList();
                 }
             } catch (error) {
                 console.error('Error switching session:', error);
                 appendMessage('system', '切换对话失败: ' + error.message);
             }
+        }
+
+        // 添加获取模型类型的辅助函数
+        async function getModelType(modelId) {
+            const response = await fetch('/get_models');
+            const models = await response.json();
+            return models[modelId].type;
+        }
+
+        // 添加获取图片数量的辅助函数
+        async function getImageCount() {
+            if (!currentSessionId) return 0;
+            const response = await fetch(`/get_image_count/${currentSessionId}`);
+            const data = await response.json();
+            return data.count;
         }
     </script>
 </body>

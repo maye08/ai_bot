@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>页面未找到 - AI Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="error-container">
+        <h1>404 - 页面未找到</h1>
+        <p>抱歉，您请求的页面不存在。</p>
+        <a href="{{ url_for('chat') }}" class="back-btn">返回主页</a>
+    </div>
+</body>
+</html>

@@ -1,6 +1,12 @@
 from enum import Enum
 from typing import Dict, Any
 from openai import OpenAI
+import logging
+import requests
+import time
+
+# 添加logger定义
+logger = logging.getLogger(__name__)
 
 class ModelType(Enum):
     TEXT = "text"
@@ -30,15 +36,36 @@ class ModelProcessor:
 
     def process_image(self, prompt: str, model_id: str, **kwargs) -> dict:
         """处理图像模型请求"""
-        response = self.client.images.generate(
-            model=model_id,
-            prompt=prompt,
-            **kwargs
-        )
-        return {
-            "type": "image",
-            "content": response.data[0].url
-        }
+        try:
+            # 生成图片
+            response = self.client.images.generate(
+                model=model_id,
+                prompt=prompt,
+                **kwargs
+            )
+            
+            # 验证响应
+            if not response.data or not len(response.data):
+                raise ValueError("未获取到图片生成结果")
+                
+            # 获取图片URL
+            image_url = response.data[0].url
+            if not image_url:
+                raise ValueError("图片URL为空")
+                
+            return {
+                "type": "image",
+                "content": image_url,
+                "status": "success"
+            }
+                
+        except Exception as e:
+            logger.error(f"图片生成错误: {str(e)}")
+            return {
+                "type": "error",  # 改为error类型
+                "content": "图片生成失败，请稍后重试",
+                "status": "error"
+            }
 
 # 模型配置字典
 MODELS_CONFIG = {
