@@ -181,7 +181,7 @@
                         const imageCount = await getImageCount();
                         updateTokenInfo(imageCount, 0, 'image');
                     } else if (data.current_tokens !== undefined) {
-                        updateTokenInfo(data.current_tokens, data.max_context_length, 'text');
+                        updateTokenInfo(data.current_tokens, data.max_tokens, 'text');
                     }
                     await loadChatList();
                 } else {
