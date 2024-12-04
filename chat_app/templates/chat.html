@@ -149,6 +149,10 @@
             sendButton.disabled = true;
             isProcessing = true;
 
+            // 立即显示用户消息并清空输入框
+            appendMessage('user', message);
+            input.value = '';
+
             try {
                 const response = await fetch('/chat', {
                     method: 'POST',
@@ -165,8 +169,6 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    appendMessage('user', message);
-                    input.value = '';
                     appendMessage(
                         'assistant', 
                         data.response.content, 
