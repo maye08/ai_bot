@@ -18,21 +18,59 @@ class ModelConfig:
         self.model_type = model_type
         self.params = params or {}
 
+def format_math_formula(content: str) -> str:
+    """格式化数学公式，将 LaTeX 公式转换为正确的显示格式"""
+    import re
+    
+    def process_block_formula(match):
+        formula = match.group(1).strip()
+        return f'\n\\[\n{formula}\n\\]\n'
+    
+    def process_inline_formula(match):
+        formula = match.group(1).strip()
+        return f'\\({formula}\\)'
+    
+    # 处理块级公式
+    content = re.sub(r'\\\[([\s\S]*?)\\\]', process_block_formula, content)
+    
+    # 处理内联公式
+    content = re.sub(r'\\\(([\s\S]*?)\\\)', process_inline_formula, content)
+    
+
+    return content
+
 class ModelProcessor:
     def __init__(self, client: OpenAI):
         self.client = client
 
     def process_text(self, messages: list, model_id: str, **kwargs) -> dict:
         """处理文本模型请求"""
-        response = self.client.chat.completions.create(
-            model=model_id,
-            messages=messages,
-            **kwargs  # 确保这里传递的是 'max_tokens'
-        )
-        return {
-            "type": "text",
-            "content": response.choices[0].message.content
-        }
+        try:
+            response = self.client.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                **kwargs
+            )
+            
+            # 获取响应内容
+            content = response.choices[0].message.content
+            
+            # 格式化数学公式
+            formatted_content = format_math_formula(content)
+            
+            return {
+                "type": "text",
+                "content": formatted_content,
+                "status": "success"
+            }
+            
+        except Exception as e:
+            logger.error(f"处理文本请求时出错: {str(e)}")
+            return {
+                "type": "error",
+                "content": f"处理失败: {str(e)}",
+                "status": "error"
+            }
 
     def process_image(self, prompt: str, model_id: str, **kwargs) -> dict:
         """处理图像模型请求"""

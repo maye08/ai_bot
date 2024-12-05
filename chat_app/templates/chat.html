@@ -4,9 +4,24 @@
     <title>AI Chat</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+     <!-- KaTeX CSS -->
+     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+     <!-- KaTeX JS -->
+     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+     <!-- 添加初始化代码 -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            renderMathInElement(document.body, {
+                delimiters: [
+                    {left: "$$", right: "$$", display: true},
+                    {left: "$", right: "$", display: false}
+                ],
+                throwOnError: false,
+                strict: false
+            });
+        });
+    </script>
 </head>
 <body>
     <div class="user-info">
@@ -97,6 +112,7 @@
         }
 
         function appendMessage(role, content, type = 'text', status = 'success') {
+            console.log('Original content:', content);
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}-message`;
             
@@ -115,13 +131,46 @@
                 img.alt = '生成的图片';
                 img.src = content;
                 img.onerror = () => {
-                    contentElement.innerHTML = '<div class="error-message">图片加载失败</div>';
+                    contentElement.innerHTML = '<div class="error-message">图片已过期</div>';
                 };
                 contentElement.appendChild(img);
             } else if (type === 'error' || status === 'error') {
                 contentElement.innerHTML = `<div class="error-message">${content}</div>`;
             } else {
-                contentElement.innerHTML = marked.parse(content);
+                // 处理块级公式
+                let processedContent = content.replace(
+                    /\\\[([\s\S]*?)\\\]/g, 
+                    function(match, formula) {
+                        return '\n$$' + formula.trim() + '$$\n';
+                    }
+                );
+        
+                // 处理内联公式
+                processedContent = processedContent.replace(
+                    /\\\(([\s\S]*?)\\\)/g,
+                    function(match, formula) {
+                        return '$' + formula.trim() + '$';
+                    }
+                );
+                console.log('Content after math processing:', processedContent); // 调试
+                // 处理 Markdown
+                let htmlContent = marked.parse(processedContent);
+                
+                console.log('Final HTML:', htmlContent); // 调试
+                
+                contentElement.innerHTML = htmlContent;
+
+                // 渲染数学公式
+                renderMathInElement(contentElement, {
+                    delimiters: [
+                        {left: "$$", right: "$$", display: true},
+                        {left: "$", right: "$", display: false}
+                    ],
+                    throwOnError: false,
+                    strict: false,
+                    trust: true,
+                    output: 'html'
+                });
             }
             
             messageDiv.appendChild(roleLabel);
@@ -428,6 +477,51 @@
             const data = await response.json();
             return data.count;
         }
+        
+        // 配置 marked
+        marked.setOptions({
+            breaks: true,
+            gfm: true,
+            pedantic: false,
+            smartLists: true,
+            smartypants: false,
+            // 添加数学公式处理
+            extensions: [{
+                name: 'math',
+                level: 'block',
+                start(src) {
+                    return src.match(/\$\$/)?.index;
+                },
+                tokenizer(src, tokens) {
+                    const match = src.match(/^\$\$([\s\S]*?)\$\$/);
+                    if (match) {
+                        return {
+                            type: 'math',
+                            raw: match[0],
+                            text: match[1].trim(),
+                            tokens: []
+                        };
+                    }
+                },
+                renderer(token) {
+                    return `<div class="math-block">$$${token.text}$$</div>`;
+                }
+            }]
+        });
+
+        document.addEventListener("DOMContentLoaded", function() {
+            renderMathInElement(document.body, {
+                delimiters: [
+                    {left: "$$", right: "$$", display: true},
+                    {left: "$", right: "$", display: false},
+                    {left: "\\[", right: "\\]", display: true},
+                    {left: "\\(", right: "\\)", display: false}
+                ],
+                throwOnError: false,
+                output: 'html',
+                strict: false
+            });
+        });
     </script>
 </body>
 </html>

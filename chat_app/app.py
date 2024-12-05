@@ -191,11 +191,7 @@ def chat_message():
                 db.session.commit()
                 
                 return jsonify({
-                    "response": {
-                        "type": "text",
-                        "content": response["content"],
-                        "status": "success"
-                    },
+                    "response": response,
                     "current_tokens": num_tokens_from_messages(current_messages),
                     "max_tokens": MAX_CONTEXT_LENGTH
                 })
