@@ -238,3 +238,30 @@ button:disabled {
     overflow-x: auto;
     overflow-y: hidden;
 }
+
+/* 代码块容器样式 */
+pre[class*="language-"] {
+    background: #1e1e1e !important;
+    border-radius: 6px;
+    margin: 1em 0;
+    padding: 1em;
+    overflow: auto;
+}
+
+/* 代码文本样式 */
+code[class*="language-"] {
+    background: transparent !important;  /* 确保代码文本背景透明 */
+    color: #d4d4d4 !important;
+    text-shadow: none !important;
+    font-family: 'Consolas', 'Monaco', 'Andale Mono', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* 代码高亮颜色 */
+.token.comment { color: #6a9955 !important; }
+.token.string { color: #ce9178 !important; }
+.token.number { color: #b5cea8 !important; }
+.token.keyword { color: #569cd6 !important; }
+.token.function { color: #dcdcaa !important; }
+.token.operator { color: #d4d4d4 !important; }

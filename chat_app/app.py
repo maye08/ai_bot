@@ -34,7 +34,8 @@ app.config.update(
 )
 
 # 数据库配置
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db'
+# 使用 instance 目录
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(app.instance_path, "chat.db")}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # 初始化数据库
@@ -197,13 +198,38 @@ def chat_message():
                 })
             
             elif model_config.model_type == ModelType.IMAGE:
+                # 保存用户消息
+                if not isinstance(chat_session.messages, list):
+                    chat_session.messages = []
+
+                chat_session.messages.append({
+                    "role": "user",
+                    "content": user_message,
+                    "type": "text"
+                })
+
+                # 生成图片
                 response = model_processor.process_image(
                     prompt=user_message,
                     model_id=model_id,
                     **model_config.params
                 )
                 
-                # 直接返回 response，确保它包含 type、content 和 status
+                # 保存 AI 响应（图片）
+                chat_session.messages.append({
+                    "role": "assistant",
+                    "content": response.get("content"),
+                    "type": "image"
+                })
+
+                # 更新会话信息
+                chat_session.last_message = user_message
+                chat_session.last_updated = datetime.utcnow()
+
+                # 提交更改
+                db.session.commit()
+
+                # 返回 response，确保它包含 type、content 和 status
                 return jsonify({
                     "response": response
                 })
