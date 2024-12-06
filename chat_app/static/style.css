@@ -99,12 +99,13 @@ body {
 }
 
 .message-container {
-    height: calc(100vh - 200px);
+    height: calc(100vh - 280px); /* 调整高度，为输入区域和token信息留出空间 */
     overflow-y: auto;
     margin-bottom: 20px;
     padding: 10px;
     border: 1px solid #ddd;
     border-radius: 4px;
+    flex-grow: 1;                /* 占用剩余空间 */
 }
 
 .message {
@@ -135,17 +136,17 @@ body {
 }
 
 .input-container {
-    position: sticky;
+    position: relative;
     bottom: 0;
     left: 0;
     right: 0;
     display: flex;
     gap: 10px;
-    padding: 15px;
+    padding: 10px;
     background: white;
     border-top: 1px solid #ddd;
     z-index: 10;
-    margin: 0; /* 移除原来的 margin-bottom */
+    margin-bottom: 5px;         /* 为token信息留出空间 */
 }
 
 input[type="text"] {
@@ -177,6 +178,8 @@ button:disabled {
     font-size: 0.9em;
     color: #666;
     text-align: right;
+    padding: 0 5px;             /* 添加少许内边距 */
+    position: relative;         /* 确保显示在正确的位置 */
 }
 
 .user-controls {
