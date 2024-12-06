@@ -1,8 +1,10 @@
 body {
     font-family: Arial, sans-serif;
     margin: 0;
-    padding: 20px;
+    padding: 0;
     background-color: #f0f2f5;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .user-info {
@@ -67,7 +69,7 @@ body {
 }
 
 .message-container {
-    height: 500px;
+    height: calc(100vh - 200px);
     overflow-y: auto;
     margin-bottom: 20px;
     padding: 10px;
@@ -103,9 +105,17 @@ body {
 }
 
 .input-container {
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
     display: flex;
     gap: 10px;
-    margin-bottom: 10px;
+    padding: 15px;
+    background: white;
+    border-top: 1px solid #ddd;
+    z-index: 10;
+    margin: 0; /* 移除原来的 margin-bottom */
 }
 
 input[type="text"] {
