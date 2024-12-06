@@ -120,6 +120,7 @@
 
         function appendMessage(role, content, type = 'text', status = 'success') {
             console.log('Original content:', content);
+            console.log('Message details:', { role, content, type, status }); // 添加这行调试代码
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}-message`;
             
@@ -450,6 +451,8 @@
             try {
                 const response = await fetch(`/get_chat_session/${sessionId}`);
                 const data = await response.json();
+
+                console.log('Received session data:', data); // 添加调试日志
                 
                 if (response.ok) {
                     currentSessionId = sessionId;
@@ -460,6 +463,7 @@
                         
                         // 显示消息
                         data.messages.forEach(msg => {
+                            console.log('Processing message:', msg); // 添加调试日志
                             if (msg.role !== 'system') {
                                 appendMessage(msg.role, msg.content, msg.type || 'text');
                             }

@@ -3,6 +3,7 @@ from openai import OpenAI
 import tiktoken
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime, timedelta
 import uuid
 import traceback
@@ -17,9 +18,40 @@ import string
 import base64
 from models.model_config import ModelProcessor, MODELS_CONFIG, ModelType
 
-# 设置日志
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+def setup_logger():
+    # 创建 logs 目录
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+        
+    # 配置日志格式
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # 文件处理器
+    file_handler = RotatingFileHandler(
+        'logs/app.log',
+        maxBytes=1024 * 1024,
+        backupCount=10,
+        encoding='utf-8'
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
+    
+    # 控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.DEBUG)
+    
+    # 配置根日志器
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
+
+logger = setup_logger()
 
 app = Flask(__name__, 
     template_folder='templates',  # 指定模板目录
@@ -198,41 +230,73 @@ def chat_message():
                 })
             
             elif model_config.model_type == ModelType.IMAGE:
-                # 保存用户消息
-                if not isinstance(chat_session.messages, list):
-                    chat_session.messages = []
-
-                chat_session.messages.append({
-                    "role": "user",
-                    "content": user_message,
-                    "type": "text"
-                })
-
-                # 生成图片
-                response = model_processor.process_image(
-                    prompt=user_message,
-                    model_id=model_id,
-                    **model_config.params
-                )
+                # 开始事务
+                db.session.begin_nested()
+                try:
+                    # 重新查询会话以确保数据最新
+                    chat_session = db.session.query(ChatSession).filter_by(
+                        id=session_id,
+                        user_id=current_user.chat_id
+                    ).with_for_update().first()
                 
-                # 保存 AI 响应（图片）
-                chat_session.messages.append({
-                    "role": "assistant",
-                    "content": response.get("content"),
-                    "type": "image"
-                })
+                    if not chat_session:
+                        return jsonify({"error": "对话不存在"}), 404
+                
+                    # 创建新的消息列表
+                    new_messages = list(chat_session.messages) if chat_session.messages else [SYSTEM_MESSAGE]
+                
+                    # 添加用户消息
+                    new_messages.append({
+                        "role": "user",
+                        "content": user_message,
+                        "type": "text"
+                    })
+                
+                    # 生成图片
+                    response = model_processor.process_image(
+                        prompt=user_message,
+                        model_id=model_id,
+                        **model_config.params
+                    )
+                
+                    # 添加AI响应
+                    new_messages.append({
+                        "role": "assistant",
+                        "content": response.get("content"),
+                        "type": "image"
+                    })
+                
+                    # 更新会话
+                    chat_session.messages = new_messages
+                    chat_session.last_message = user_message
+                    chat_session.last_updated = datetime.utcnow()
+                
+                    # 验证数据
+                    logger.debug(f"Updating messages to: {new_messages}")
+                
+                    # 保存更改
+                    db.session.flush()
+                
+                    # 验证保存的数据
+                    saved_messages = chat_session.messages
+                    if saved_messages != new_messages:
+                        raise ValueError("Messages not saved correctly")
+                
+                    # 提交事务
+                    db.session.commit()
+                
+                    logger.debug(f"Final saved messages: {chat_session.messages}")
+                
+                    return jsonify({
+                        "response": response
+                    })
+                
+                except Exception as e:
+                    db.session.rollback()
+                    logger.error(f"Error saving chat messages: {str(e)}")
+                    raise
 
-                # 更新会话信息
-                chat_session.last_message = user_message
-                chat_session.last_updated = datetime.utcnow()
 
-                # 提交更改
-                db.session.commit()
-
-                # 返回 response，确保它包含 type、content 和 status
-                return jsonify({
-                    "response": response
-                })
                 
         except Exception as e:
             logger.error(f"Chat error: {str(e)}")
@@ -453,6 +517,9 @@ def get_chat_session(session_id):
             id=session_id,
             user_id=current_user.chat_id
         ).first()
+
+        # 添加调试日志
+        logger.debug(f"Retrieved messages for session {session_id}: {session.messages}")
         
         if not session:
             return jsonify({"error": "对话不存在"}), 404
