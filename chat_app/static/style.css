@@ -87,6 +87,47 @@ body {
     white-space: nowrap;
     flex-shrink: 0;              /* 防止聊天项被压缩 */
     min-height: 36px;            /* 设置最小高度 */
+    position: relative;  /* 添加相对定位 */
+    display: flex;      /* 使用flex布局 */
+    justify-content: space-between; /* 两端对齐 */
+    align-items: center;
+}
+
+.chat-item-title {
+    flex-grow: 1;       /* 标题占据剩余空间 */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-item-actions {
+    display: none;      /* 默认隐藏 */
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.9);
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.chat-item:hover .chat-item-actions {
+    display: flex;      /* 悬停时显示 */
+    gap: 4px;
+}
+
+.delete-btn {
+    padding: 2px 6px;
+    font-size: 12px;
+    background-color: #ff4444;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.delete-btn:hover {
+    background-color: #cc0000;
 }
 
 .chat-item:hover {

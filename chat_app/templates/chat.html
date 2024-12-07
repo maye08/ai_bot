@@ -400,12 +400,41 @@
                             chatItem.classList.add('active');
                         }
                         
-                        chatItem.onclick = () => switchSession(session.id);
+                        //chatItem.onclick = () => switchSession(session.id);
+
+                        // 创建标题容器
+                        const titleDiv = document.createElement('div');
+                        titleDiv.className = 'chat-item-title';
                         
                         const title = session.last_message || '新对话';
-                        chatItem.textContent = title.length > 20 ? title.substring(0, 20) + '...' : title;
+                        titleDiv.textContent = title.length > 20 ? title.substring(0, 20) + '...' : title;
                         
+                        // chatList.appendChild(chatItem);
+
+                        // 创建操作按钮容器
+                        const actionsDiv = document.createElement('div');
+                        actionsDiv.className = 'chat-item-actions';
+
+                        // 创建删除按钮
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.className = 'delete-btn';
+                        deleteBtn.textContent = '删除';
+                        deleteBtn.onclick = async (e) => {
+                            e.stopPropagation(); // 阻止事件冒泡
+                            await deleteSession(session.id);
+                        };
+                        
+                        // 组装元素
+                        actionsDiv.appendChild(deleteBtn);
+                        chatItem.appendChild(titleDiv);
+                        chatItem.appendChild(actionsDiv);
+
+                        // 添加点击事件（切换对话）
+                        titleDiv.onclick = () => switchSession(session.id);
+                
                         chatList.appendChild(chatItem);
+
+
                     });
                 } else {
                     const emptyMessage = document.createElement('div');
@@ -443,6 +472,32 @@
                 appendMessage('system', '创建新对话失败: ' + error.message);
             }
         }
+
+        // 添加删除会话的函数
+        async function deleteSession(sessionId) {
+            try {
+                const response = await fetch(`/clear_chat_session/${sessionId}`, {
+                    method: 'POST'
+                });
+        
+                if (response.ok) {
+                    // 如果删除的是当前会话，清空消息容器
+                    if (sessionId === currentSessionId) {
+                        messageContainer.innerHTML = '';
+                        currentSessionId = null;
+                    }
+                    // 重新加载会话列表
+                    await loadChatList();
+                } else {
+                    const data = await response.json();
+                    alert('删除失败: ' + (data.error || '未知错误'));
+                }
+            } catch (error) {
+                console.error('Error deleting session:', error);
+                alert('删除失败: ' + error.message);
+            }
+        }
+
 
         // 修改 switchSession 函数
         async function switchSession(sessionId) {
