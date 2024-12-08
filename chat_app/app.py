@@ -17,6 +17,32 @@ import random
 import string
 import base64
 from models.model_config import ModelProcessor, MODELS_CONFIG, ModelType
+import sys
+
+# 修改这行导入，添加 Subscription 和 PaymentRecord
+from models.database_models import (
+    db, User, ChatHistory, ChatSession, 
+    Subscription, PaymentRecord  # 添加这两个模型的导入
+)
+
+
+# 添加项目根目录到 Python 路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+# 使用绝对导入
+from chat_app.config.alipay_config import get_alipay_client
+
+# 订阅计划配置
+SUBSCRIPTION_PLANS = {
+    'monthly': {
+        'name': '月度订阅',
+        'price': 0.99,
+        'points': 100000,
+        'duration': 30  # 天数
+    }
+}
 
 def setup_logger():
     # 创建 logs 目录
@@ -144,7 +170,11 @@ def before_request():
 @login_required
 def chat():
     """聊天页面"""
-    return render_template('chat.html')
+    subscription = Subscription.query.filter_by(
+        user_id=current_user.chat_id,
+        status='active'
+    ).first()
+    return render_template('chat.html', subscription=subscription)
 
 @app.route('/get_chat_history')
 @login_required
@@ -183,6 +213,13 @@ def get_models():
 @app.route('/chat', methods=['POST'])
 @login_required
 def chat_message():
+    # 在处理消息前检查积分
+    required_points = 10  # 每次对话消耗的积分
+    if not check_points(current_user.chat_id, required_points):
+        return jsonify({
+            "error": "积分不足，请订阅以获取更多积分",
+            "code": "INSUFFICIENT_POINTS"
+        }), 403
     """处理聊天请求"""
     try:
         session_id = request.json.get('session_id')
@@ -287,11 +324,25 @@ def chat_message():
                 chat_session.last_message = user_message  # 更新最后一条消息
                 chat_session.last_updated = datetime.utcnow()
                 db.session.commit()
+
+                # 消息处理成功后扣除积分
+                if not deduct_points(current_user.chat_id, required_points):
+                    return jsonify({
+                        "error": "扣除积分失败",
+                        "code": "POINTS_DEDUCTION_FAILED"
+                    }), 500
+                
+                # 获取最新积分
+                subscription = Subscription.query.filter_by(
+                    user_id=current_user.chat_id,
+                    status='active'
+                ).first()
                 
                 return jsonify({
                     "response": response,
                     "current_tokens": num_tokens_from_messages(current_messages),
-                    "max_tokens": MAX_CONTEXT_LENGTH
+                    "max_tokens": MAX_CONTEXT_LENGTH,
+                    "points_remaining": subscription.points if subscription else 0
                 })
             
             elif model_config.model_type == ModelType.IMAGE:
@@ -351,9 +402,23 @@ def chat_message():
                     db.session.commit()
                 
                     logger.debug(f"Final saved messages: {chat_session.messages}")
+                    
+                    # 消息处理成功后扣除积分
+                    if not deduct_points(current_user.chat_id, required_points):
+                        return jsonify({
+                            "error": "扣除积分失败",
+                            "code": "POINTS_DEDUCTION_FAILED"
+                        }), 500
+                
+                    # 获取最新积分
+                    subscription = Subscription.query.filter_by(
+                        user_id=current_user.chat_id,
+                        status='active'
+                    ).first()
                 
                     return jsonify({
-                        "response": response
+                        "response": response,
+                        "points_remaining": subscription.points if subscription else 0
                     })
                 
                 except Exception as e:
@@ -507,6 +572,18 @@ def register():
         
         db.session.add(user)
         db.session.add(chat_history)
+
+        # 添加默认订阅计划
+        subscription = Subscription(
+            user_id=user.chat_id,
+            plan_type='free',
+            points=1000,  # 默认赠送的积分
+            start_date=datetime.utcnow(),
+            end_date=datetime.utcnow() + timedelta(days=30),
+            status='active'
+        )
+
+        db.session.add(subscription)
         db.session.commit()
         
         login_user(user)
@@ -646,6 +723,134 @@ def get_image_count(session_id):
     except Exception as e:
         logger.error(f"Error getting image count: {str(e)}")
         return jsonify({"count": 0})
+
+@app.route('/subscription')
+@login_required
+def subscription_page():
+    """订阅页面"""
+    subscription = Subscription.query.filter_by(
+        user_id=current_user.chat_id,
+        status='active'
+    ).first()
+    
+    return render_template('subscription.html', 
+        plans=SUBSCRIPTION_PLANS,
+        current_subscription=subscription
+    )
+
+@app.route('/create_order', methods=['POST'])
+@login_required
+def create_order():
+    """创建订单"""
+    try:
+        plan_type = request.json.get('plan_type')
+        if plan_type not in SUBSCRIPTION_PLANS:
+            return jsonify({'error': '无效的订阅计划'}), 400
+            
+        plan = SUBSCRIPTION_PLANS[plan_type]
+        order_id = f"SUB_{datetime.now().strftime('%Y%m%d%H%M%S')}_{current_user.id}"
+        
+        # 创建支付宝订单
+        alipay = get_alipay_client()
+        order_string = alipay.api_alipay_trade_page_pay(
+            out_trade_no=order_id,
+            total_amount=str(plan['price']),
+            subject=f"AI助手{plan['name']}",
+            return_url=url_for('payment_callback', _external=True),
+            notify_url=url_for('payment_notify', _external=True)
+        )
+        
+        # 记录订单
+        payment = PaymentRecord(
+            user_id=current_user.chat_id,
+            order_id=order_id,
+            amount=plan['price']
+        )
+        db.session.add(payment)
+        db.session.commit()
+        
+        return jsonify({
+            'order_string': order_string,
+            'payment_url': f"https://openapi.alipay.com/gateway.do?{order_string}"
+        })
+        
+    except Exception as e:
+        logger.error(f"创建订单失败: {str(e)}")
+        return jsonify({'error': '创建订单失败'}), 500
+
+@app.route('/payment_callback')
+def payment_callback():
+    """支付完成回调"""
+    try:
+        alipay = get_alipay_client()
+        data = request.args.to_dict()
+        signature = data.pop("sign")
+        
+        # 验证签名
+        if alipay.verify(data, signature):
+            order_id = data.get('out_trade_no')
+            payment = PaymentRecord.query.filter_by(order_id=order_id).first()
+            
+            if payment and payment.status == 'pending':
+                payment.status = 'success'
+                payment.payment_time = datetime.now()
+                
+                # 创建或更新订阅
+                subscription = Subscription.query.filter_by(
+                    user_id=payment.user_id,
+                    status='active'
+                ).first()
+                
+                if subscription:
+                    subscription.points += SUBSCRIPTION_PLANS['monthly']['points']
+                else:
+                    subscription = Subscription(
+                        user_id=payment.user_id,
+                        plan_type='monthly',
+                        points=SUBSCRIPTION_PLANS['monthly']['points'],
+                        start_date=datetime.now(),
+                        end_date=datetime.now() + timedelta(days=30)
+                    )
+                    db.session.add(subscription)
+                
+                db.session.commit()
+                return redirect(url_for('subscription_page'))
+                
+        return jsonify({'error': '支付验证失败'}), 400
+        
+    except Exception as e:
+        logger.error(f"支付回调处理失败: {str(e)}")
+        return jsonify({'error': '支付处理失败'}), 500    
+
+def check_points(user_id, required_points):
+    """检查用户积分是否足够"""
+    subscription = Subscription.query.filter_by(
+        user_id=user_id,
+        status='active'
+    ).first()
+    
+    if not subscription or subscription.points < required_points:
+        return False
+    return True
+
+def deduct_points(user_id, points):
+    """扣除用户积分"""
+    try:
+        subscription = Subscription.query.filter_by(
+            user_id=user_id,
+            status='active'
+        ).first()
+        
+        if subscription:
+            subscription.points -= points
+            db.session.commit()
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"扣除积分失败: {str(e)}")
+        db.session.rollback()
+        return False
+
 
 if __name__ == '__main__':
     with app.app_context():

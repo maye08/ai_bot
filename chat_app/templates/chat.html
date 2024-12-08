@@ -34,6 +34,10 @@
     <div class="user-info">
         <div class="user-controls">
             <span>当前用户: {{ current_user.username }}</span>
+            {% if subscription %}
+                <span class="points-display">积分: {{ subscription.points }}</span>
+            {% endif %}
+            <a href="{{ url_for('subscription_page') }}" class="subscription-btn">订阅服务</a>
             <a href="{{ url_for('logout') }}" class="logout-btn">登出</a>
         </div>
     </div>
@@ -395,8 +399,18 @@
                         updateTokenInfo(data.current_tokens, data.max_tokens, 'text');
                     }
                     await loadChatList();
+
+                    // 更新积分显示
+                    if (data.points_remaining !== undefined) {
+                        updatePointsDisplay(data.points_remaining);
+                    }
                 } else {
-                    appendMessage('system', '发送失败: ' + (data.error || '未知错误'));
+                    if (data.code === 'INSUFFICIENT_POINTS') {
+                        alert('积分不足，请订阅以获取更多积分');
+                        window.location.href = '/subscription';
+                    } else {
+                        appendMessage('system', '发送失败: ' + (data.error || '未知错误'));
+                    }
                 }
             } catch (error) {
                 console.error('Error sending message:', error);
@@ -404,6 +418,14 @@
             } finally {
                 isProcessing = false;
                 sendButton.disabled = false;
+            }
+        }
+
+        // 添加积分显示更新函数
+        function updatePointsDisplay(points) {
+            const pointsDisplay = document.querySelector('.points-display');
+            if (pointsDisplay) {
+                pointsDisplay.textContent = `积分: ${points}`;
             }
         }
 

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}订阅服务 - AI Chat{% endblock %}
+
+{% block content %}
+<div class="subscription-container">
+    <div class="subscription-header">
+        <h2>订阅服务</h2>
+        {% if subscription and subscription.is_active() %}
+            <div class="current-subscription">
+                <p>当前积分: {{ subscription.points }}</p>
+                <p>到期时间: {{ subscription.end_date.strftime('%Y-%m-%d') }}</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="subscription-plans">
+        {% for plan_id, plan in plans.items() %}
+        <div class="plan-card">
+            <h3>{{ plan.name }}</h3>
+            <div class="price">¥{{ plan.price }}/月</div>
+            <div class="points">{{ plan.points }} 积分</div>
+            <ul class="plan-features">
+                <li>无限对话次数</li>
+                <li>高级AI模型支持</li>
+                <li>优先客服支持</li>
+            </ul>
+            <button onclick="subscribe('{{ plan_id }}')" class="subscribe-btn">
+                立即订阅
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+async function subscribe(planType) {
+    try {
+        const response = await fetch('/create_order', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ plan_type: planType })
+        });
+        
+        const data = await response.json();
+        if (data.payment_url) {
+            window.location.href = data.payment_url;
+        } else {
+            alert('创建订单失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('订阅失败: ' + error.message);
+    }
+}
+</script>
+{% endblock %}
+{% endblock %}

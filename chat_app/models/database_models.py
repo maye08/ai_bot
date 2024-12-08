@@ -66,3 +66,27 @@ class ChatSession(db.Model):
             value = []
         logger.debug(f"Setting messages to: {value}")
         self._messages = value.copy()  # 使用copy()避免引用问题
+
+class Subscription(db.Model):
+    __tablename__ = 'subscriptions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.chat_id'), nullable=False)
+    plan_type = db.Column(db.String(50), nullable=False)  # 订阅类型
+    points = db.Column(db.Integer, default=0)  # 剩余积分
+    start_date = db.Column(db.DateTime, nullable=False)
+    end_date = db.Column(db.DateTime, nullable=False)
+    status = db.Column(db.String(20), default='active')  # active, expired
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def is_active(self):
+        return self.status == 'active' and self.end_date > datetime.utcnow()
+
+class PaymentRecord(db.Model):
+    __tablename__ = 'payment_records'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.chat_id'), nullable=False)
+    order_id = db.Column(db.String(64), unique=True, nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    status = db.Column(db.String(20), default='pending')  # pending, success, failed
+    payment_time = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
