@@ -289,7 +289,8 @@ def chat_message():
                     # 构建上下文文本
                     context_text = "请结合以下内容分析这张图片："
                     if previous_text.strip():
-                        context_text += "\n历史对话：" + previous_text
+                        #context_text += "\n历史对话：" + previous_text
+                        pass
                     if user_text.strip():
                         context_text += "\n用户描述：" + user_text
 
@@ -303,12 +304,39 @@ def chat_message():
                         ]
                     })
                 else:
-                    # 处理普通文本消息
-                    current_messages.append({
-                        "role": "user",
-                        "content": user_message
-                    })
-                
+                    if current_messages and len(current_messages) > 1:
+                        msg = current_messages[-1] # 最后一条消息是AI生成的图片
+                        if msg['role'] == 'assistant' and msg['type'] == 'image':
+                            # 构建图片消息
+                            # 提取图片URL
+                            image_url = msg.get('content', '')
+                            image_content = []
+                            image_content.append({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image_url
+                                }
+                            })
+                            # 构建带图片的消息
+                            current_messages.append({
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": user_message},
+                                    *image_content
+                                ]
+                            })
+                        else:        
+                            # 处理普通文本消息
+                            current_messages.append({
+                                "role": "user",
+                                "content": user_message
+                            })
+                    else:
+                        # 处理普通文本消息
+                        current_messages.append({
+                            "role": "user",
+                            "content": user_message
+                        })
                 params = model_config.params.copy()
                 if 'max_output_tokens' in params:
                     params['max_tokens'] = params.pop('max_output_tokens')
@@ -319,7 +347,7 @@ def chat_message():
                     **params
                 )
                 
-                current_messages.append({"role": "assistant", "content": response["content"]})
+                current_messages.append({"role": "assistant", "content": response["content"], "type": "text"})
                 chat_session.messages = current_messages
                 chat_session.last_message = user_message  # 更新最后一条消息
                 chat_session.last_updated = datetime.utcnow()
