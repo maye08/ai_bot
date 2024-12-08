@@ -108,11 +108,11 @@ class ModelProcessor:
 # 模型配置字典
 MODELS_CONFIG = {
     "gpt-3.5-turbo": ModelConfig("gpt-3.5-turbo", ModelType.TEXT, {
-        "temperature": 0.7,
+        "temperature": 1.0,
         "max_tokens": 4000
     }),
-    "gpt-4": ModelConfig("gpt-4", ModelType.TEXT, {
-        "temperature": 0.7,
+    "gpt-4o": ModelConfig("gpt-4o", ModelType.TEXT, {
+        "temperature": 1.0,
         "max_tokens": 4000
     }),
     "dall-e-3": ModelConfig("dall-e-3", ModelType.IMAGE, {
@@ -121,15 +121,15 @@ MODELS_CONFIG = {
         "n": 1
     }),
     "gpt-4o-mini": ModelConfig("gpt-4o-mini", ModelType.TEXT, {
-        "temperature": 0.7,
+        "temperature": 1.0,
         "max_tokens": 4000
     }),
     "o1-mini": ModelConfig("o1-mini", ModelType.TEXT, {
-        "temperature": 0.7,
+        "temperature": 1.0,
         "max_tokens": 4000
     }),
     "o1-preview": ModelConfig("o1-preview", ModelType.TEXT, {
-        "temperature": 0.7,
+        "temperature": 1.0,
         "max_tokens": 4000
     })
 } 

@@ -190,6 +190,43 @@ body {
     margin-bottom: 5px;         /* 为token信息留出空间 */
 }
 
+.editor-container {
+    flex: 1;
+    display: flex;
+    gap: 10px;
+    min-height: 100px;
+}
+
+.input-area {
+    flex: 1;
+    min-height: 100px;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: monospace;
+    resize: vertical;
+}
+
+
+.preview-area {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow-y: auto;
+    background: #fff;
+    display: none;
+}
+
+.preview-active .input-area {
+    display: none;
+}
+
+.preview-active .preview-area {
+    display: block;
+}
+
+
 input[type="text"] {
     flex-grow: 1;
     padding: 8px;

@@ -56,7 +56,16 @@
                     <option value="o1-preview">o1-preview</option>
                     <option value="dall-e-3">dall-e-3</option>
                 </select>
-                <input type="text" id="user-input" placeholder="输入消息..." onkeypress="handleKeyPress(event)">
+                <div class="editor-container">
+                    <textarea 
+                        id="user-input" 
+                        class="input-area" 
+                        placeholder="输入消息... 支持Markdown格式"
+                        onpaste="handlePaste(event)"
+                        onkeydown="handleKeyDown(event)"
+                    ></textarea>
+                    <div id="preview" class="preview-area markdown-body"></div>
+                </div>
                 <button onclick="sendMessage()">发送</button>
                 <button onclick="clearChat()">清除对话</button>
             </div>
@@ -71,6 +80,8 @@
         let isProcessing = false;
         let isLoading = false;
         let currentSessionId = null;
+        // 全局变量
+        let isPreviewMode = false;
 
         function updateTokenInfo(current = 0, maxContext = 0, modelType = 'text') {
             console.log('Updating token info:', { current, maxContext, modelType });
@@ -207,6 +218,87 @@
             return messageDiv;
         }
 
+        // 处理粘贴事件
+        async function handlePaste(e) {
+            const textarea = e.target;
+            const items = e.clipboardData.items;
+
+            for (let item of items) {
+                if (item.type.indexOf('image') !== -1) {
+                    e.preventDefault();
+                    const file = item.getAsFile();
+            
+                    try {
+                        // 转换为base64
+                        let base64 = await readAsBase64(file);
+
+                        // 压缩图片
+                        base64 = await compressImage(base64);
+
+                        // 检查消息长度
+                        const currentLength = textarea.value.length;
+                        const imageLength = base64.length;
+
+                        // 估算令牌数（粗略估计：4个字符约等于1个令牌）
+                        const estimatedTokens = Math.ceil((currentLength + imageLength) / 4);
+
+                        if (estimatedTokens > 10000) { // 设置一个安全的限制
+                            alert('消息过长，请减少内容后重试');
+                            return;
+                        }
+                
+                        // 在光标位置插入Markdown图片语法
+                        const imageMarkdown = `![image](${base64})\n`;
+                        const start = textarea.selectionStart;
+                        const end = textarea.selectionEnd;
+                
+                        textarea.value = 
+                            textarea.value.substring(0, start) + 
+                            imageMarkdown + 
+                            textarea.value.substring(end);
+                
+                        // 更新预览
+                        updatePreview();
+                
+                        return;
+                    } catch (error) {
+                        console.error('Error handling image paste:', error);
+                        alert('图片处理失败');
+                    }
+                }
+            }
+        }
+
+        // 文件转base64
+        function readAsBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // 处理按键事件
+        function handleKeyDown(e) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // 更新预览内容
+        function updatePreview() {
+            const input = document.getElementById('user-input').value;
+            const preview = document.getElementById('preview');
+            preview.innerHTML = marked.parse(input);
+    
+            // 处理代码高亮
+            preview.querySelectorAll('pre code').forEach((block) => {
+                Prism.highlightElement(block);
+            });
+        }
+
         async function sendMessage() {
             if (isProcessing || isLoading) return;
             if (!currentSessionId) {
@@ -220,6 +312,13 @@
 
             if (!message) return;
 
+            // 估算令牌数
+            const estimatedTokens = Math.ceil(message.length / 4);
+            if (estimatedTokens > 10000) {
+                alert('消息过长，请减少内容后重试');
+                return;
+            }
+
             const sendButton = document.querySelector('button[onclick="sendMessage()"]');
             sendButton.disabled = true;
             isProcessing = true;
@@ -227,6 +326,8 @@
             // 立即显示用户消息并清空输入框
             appendMessage('user', message);
             input.value = '';
+
+            const messageType = message.includes('![') ? 'image' : 'text';
 
             try {
                 const response = await fetch('/chat', {
@@ -236,10 +337,21 @@
                     },
                     body: JSON.stringify({ 
                         message: message, 
+                        type: messageType,
                         model: model,
                         session_id: currentSessionId 
                     })
                 });
+
+                // 清空输入区域和预览区域
+                input.value = '';
+                const preview = document.getElementById('preview');
+                preview.innerHTML = '';
+        
+                // 确保回到编辑模式
+                if (isPreviewMode) {
+                    togglePreview();
+                }
 
                 const data = await response.json();
 
@@ -270,6 +382,52 @@
                 sendButton.disabled = false;
             }
         }
+
+        // 切换预览模式
+        function togglePreview() {
+            const container = document.querySelector('.editor-container');
+            const previewBtn = document.getElementById('preview-btn');
+            isPreviewMode = !isPreviewMode;
+    
+            if (isPreviewMode) {
+                container.classList.add('preview-active');
+                previewBtn.textContent = '编辑';
+                updatePreview();
+            } else {
+                container.classList.remove('preview-active');
+                previewBtn.textContent = '预览';
+            }
+        }
+
+        // 添加图片压缩函数
+        async function compressImage(base64String, maxWidth = 800) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+            
+                    // 如果图片宽度超过最大宽度，按比例缩放
+                    if (width > maxWidth) {
+                        height = Math.floor(height * (maxWidth / width));
+                        width = maxWidth;
+                    }
+            
+                    canvas.width = width;
+                    canvas.height = height;
+            
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+            
+                    // 压缩为 JPEG 格式，质量 0.8
+                    resolve(canvas.toDataURL('image/jpeg', 0.8));
+                };
+                img.onerror = reject;
+                img.src = base64String;
+            });
+        }
+
 
         function handleKeyPress(event) {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -357,7 +515,7 @@
                 const modelOrder = [
                     "gpt-4o-mini",
                     "gpt-3.5-turbo",
-                    "gpt-4",
+                    "gpt-4o",
                     "o1-mini",
                     "o1-preview",
                     "dall-e-3"

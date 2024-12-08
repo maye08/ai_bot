@@ -196,6 +196,7 @@ def chat_message():
             
         user_message = request.json.get('message', '')
         model_id = request.json.get('model', 'gpt-3.5-turbo')
+        message_type = request.json.get('type', 'text')  # 添加这行来获取消息类型
 
         if model_id not in MODELS_CONFIG:
             return jsonify({"error": f"不支持的模型: {model_id}"}), 400
@@ -205,7 +206,71 @@ def chat_message():
         try:
             if model_config.model_type == ModelType.TEXT:
                 current_messages = chat_session.messages.copy() if isinstance(chat_session.messages, list) else [SYSTEM_MESSAGE]
-                current_messages.append({"role": "user", "content": user_message})
+                # 提取除了最后一条图片消息外的所有文本内容
+
+                # 处理图片消息
+                if message_type == 'image':
+
+                    # 提取除了最后一条图片消息外的所有文本内容
+                    previous_text = ""
+                    if current_messages and len(current_messages) > 1:
+                        for msg in current_messages[:-1]:  # 排除最后一条（图片消息）
+                            if msg['role'] != 'system':  # 排除系统消息
+                                content = msg.get('content', '')
+                                if isinstance(content, str):  # 处理文本消息
+                                    previous_text += content + "\n"
+                                elif isinstance(content, list):  # 处理可能的多模态消息
+                                    for item in content:
+                                        if isinstance(item, dict) and item.get('type') == 'text':
+                                            previous_text += item.get('text', '') + "\n"
+
+
+                    # 移除最后一条消息（原始图片消息）
+                    if len(current_messages) > 1:
+                        current_messages.pop()
+                    # 提取图片内容
+                    # 提取图片内容和纯文本内容
+                    image_content = []
+                    text_content = []
+                    for line in user_message.split('\n'):
+                        if line.startswith('![') and '](' in line and line.endswith(')'):
+                            # 提取图片URL
+                            image_url = line[line.index('(')+1:-1]
+                            image_content.append({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image_url
+                                }
+                            })
+                        else:
+                            # 保存非图片的文本内容
+                            line = line.strip()
+                            if line:  # 只保存非空行
+                                text_content.append(line)
+                    # 合并所有文本内容
+                    user_text = "\n".join(text_content)
+                    # 构建上下文文本
+                    context_text = "请结合以下内容分析这张图片："
+                    if previous_text.strip():
+                        context_text += "\n历史对话：" + previous_text
+                    if user_text.strip():
+                        context_text += "\n用户描述：" + user_text
+
+            
+                    # 构建带图片的消息
+                    current_messages.append({
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": context_text},
+                            *image_content
+                        ]
+                    })
+                else:
+                    # 处理普通文本消息
+                    current_messages.append({
+                        "role": "user",
+                        "content": user_message
+                    })
                 
                 params = model_config.params.copy()
                 if 'max_output_tokens' in params:
