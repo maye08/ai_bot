@@ -39,6 +39,10 @@ body {
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     padding: 20px;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 120px);  /* 减小高度，为底部留出更多空间 */
+    margin-bottom: 20px;          /* 添加底部边距 */
 }
 
 .new-chat-btn {
@@ -188,6 +192,7 @@ body {
     border-top: 1px solid #ddd;
     z-index: 10;
     margin-bottom: 5px;         /* 为token信息留出空间 */
+    align-items: flex-start;  /* 让按钮对齐到顶部 */
 }
 
 .editor-container {
@@ -195,6 +200,8 @@ body {
     display: flex;
     gap: 10px;
     min-height: 100px;
+    max-height: 150px;      /* 限制最大高度 */
+    margin-bottom: 5px;  /* 为token信息留出空间 */
 }
 
 .input-area {
@@ -241,15 +248,18 @@ button {
     border: none;
     border-radius: 4px;
     cursor: pointer;
+    height: 36px;        /* 固定按钮高度 */
 }
 
 button:hover {
     background-color: #1565c0;
+    height: 36px;        /* 固定按钮高度 */
 }
 
 button:disabled {
     background-color: #bdbdbd;
     cursor: not-allowed;
+    height: 36px;        /* 固定按钮高度 */
 }
 
 .token-info {
