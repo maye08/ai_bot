@@ -404,11 +404,18 @@ def chat_message():
                     )
                 
                     # 添加AI响应
-                    new_messages.append({
-                        "role": "assistant",
-                        "content": response.get("content"),
-                        "type": "image"
-                    })
+                    if response.get("type") == 'error':
+                        new_messages.append({
+                            "role": "system",
+                            "content": response.get("content"),
+                            "type": "image"
+                        })
+                    else:
+                        new_messages.append({
+                            "role": "assistant",
+                            "content": response.get("content"),
+                            "type": "image"
+                        })
                 
                     # 更新会话
                     chat_session.messages = new_messages
