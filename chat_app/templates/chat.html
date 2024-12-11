@@ -155,10 +155,12 @@
                 img.src = content;
                 img.onerror = () => {
                     contentElement.innerHTML = '<div class="error-message">图片已过期</div>';
+                    return; // 添加 return 语句提前结束
                 };
                 contentElement.appendChild(img);
             } else if (type === 'error' || status === 'error') {
                 contentElement.innerHTML = `<div class="error-message">${content}</div>`;
+                return; // 添加 return 语句提前结束
             } else {
                 // 处理文本消息
                 let processedContent = '';
@@ -219,22 +221,25 @@
                 
                 contentElement.innerHTML = htmlContent;
 
-                // 确保在内容添加到 DOM 后再调用 Prism
-                setTimeout(() => {
-                    Prism.highlightAllUnder(contentElement);
-                }, 0);
+                // 修改这里：先执行代码高亮，然后渲染数学公式
+                Prism.highlightAllUnder(contentElement);
 
-                // 渲染数学公式
-                renderMathInElement(contentElement, {
-                    delimiters: [
-                        {left: "$$", right: "$$", display: true},
-                        {left: "$", right: "$", display: false}
-                    ],
-                    throwOnError: false,
-                    strict: false,
-                    trust: true,
-                    output: 'html'
-                });
+                // 确保在内容完全加载后再渲染数学公式
+                setTimeout(() => {
+                    renderMathInElement(contentElement, {
+                        delimiters: [
+                            {left: "$$", right: "$$", display: true},
+                            {left: "$", right: "$", display: false}
+                        ],
+                        throwOnError: false,
+                        strict: false,
+                        trust: true,
+                        output: 'html',
+                        macros: {
+                            "\\text": "\\mathrm"  // 添加对 \text 的支持
+                        }
+                    });
+                }, 0);
 
             }
             

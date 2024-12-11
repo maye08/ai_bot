@@ -348,13 +348,18 @@ def chat_message():
                     **params
                 )
                 
-                current_messages.append({"role": "assistant", "content": response["content"], "type": "text"})
+                if response.get("type") != 'error':
+                    current_messages.append({"role": "assistant", "content": response["content"], "type": "text"})
+                else:
+                    current_messages.append({"role": "system", "content": response["content"], "type": "error"})
                 chat_session.messages = current_messages
                 chat_session.last_message = user_message  # 更新最后一条消息
                 chat_session.last_updated = datetime.utcnow()
                 db.session.commit()
 
                 # 消息处理成功后扣除积分
+                # 计算并扣除积分
+                required_points = calculate_points(model_id, response)
                 if not deduct_points(current_user.chat_id, required_points):
                     return jsonify({
                         "error": "扣除积分失败",
@@ -375,6 +380,12 @@ def chat_message():
                 })
             
             elif model_config.model_type == ModelType.IMAGE:
+                required_points = 500
+                if not check_points(current_user.chat_id, required_points):
+                    return jsonify({
+                        "error": "积分不足，请订阅以获取更多积分",
+                        "code": "INSUFFICIENT_POINTS"
+                    }), 403
                 # 开始事务
                 db.session.begin_nested()
                 try:
@@ -409,7 +420,7 @@ def chat_message():
                         new_messages.append({
                             "role": "system",
                             "content": response.get("content"),
-                            "type": "image"
+                            "type": "error"
                         })
                     else:
                         new_messages.append({
@@ -440,6 +451,8 @@ def chat_message():
                     logger.debug(f"Final saved messages: {chat_session.messages}")
                     
                     # 消息处理成功后扣除积分
+                    # 计算并扣除积分
+                    required_points = calculate_points(model_id, response)
                     if not deduct_points(current_user.chat_id, required_points):
                         return jsonify({
                             "error": "扣除积分失败",
@@ -950,6 +963,24 @@ def deduct_points(user_id, points):
         db.session.rollback()
         return False
 
+def calculate_points(model_id: str, response_data: dict) -> int:
+    """计算需要扣除的积分"""
+    model_config = MODELS_CONFIG.get(model_id)
+    if not model_config:
+        raise ValueError(f"未知的模型: {model_id}")
+    
+    if model_config.model_type == ModelType.TEXT:
+        input_tokens = response_data.get('input_tokens', 0)
+        output_tokens = response_data.get('output_tokens', 0)
+        points = (
+            (input_tokens * model_config.input_price / 1000 + 
+             output_tokens * model_config.output_price / 1000)
+            * 100000
+        )
+    else:  # IMAGE
+        points = model_config.output_price * 100000
+        
+    return int(points)
 
 if __name__ == '__main__':
     with app.app_context():

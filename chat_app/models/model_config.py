@@ -12,11 +12,15 @@ class ModelType(Enum):
     TEXT = "text"
     IMAGE = "image"
 
+# 在 ModelConfig 类中添加价格配置
 class ModelConfig:
-    def __init__(self, model_id: str, model_type: ModelType, params: Dict[str, Any] = None):
+    def __init__(self, model_id: str, model_type: ModelType, params: Dict[str, Any] = None, 
+                 input_price: float = 0, output_price: float = 0):
         self.model_id = model_id
         self.model_type = model_type
         self.params = params or {}
+        self.input_price = input_price
+        self.output_price = output_price
 
 def format_math_formula(content: str) -> str:
     """格式化数学公式，将 LaTeX 公式转换为正确的显示格式"""
@@ -51,6 +55,10 @@ class ModelProcessor:
                 messages=messages,
                 **kwargs
             )
+
+            # 获取输入和输出的 token 数量
+            input_tokens = response.usage.prompt_tokens
+            output_tokens = response.usage.completion_tokens
             
             # 获取响应内容
             content = response.choices[0].message.content
@@ -61,7 +69,9 @@ class ModelProcessor:
             return {
                 "type": "text",
                 "content": formatted_content,
-                "status": "success"
+                "status": "success",
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens
             }
             
         except Exception as e:
@@ -107,29 +117,54 @@ class ModelProcessor:
 
 # 模型配置字典
 MODELS_CONFIG = {
-    "gpt-3.5-turbo": ModelConfig("gpt-3.5-turbo", ModelType.TEXT, {
-        "temperature": 1.0,
-        "max_tokens": 4000
-    }),
-    "gpt-4o": ModelConfig("gpt-4o", ModelType.TEXT, {
-        "temperature": 1.0,
-        "max_tokens": 4000
-    }),
-    "dall-e-3": ModelConfig("dall-e-3", ModelType.IMAGE, {
-        "size": "1024x1024",
-        "quality": "standard",
-        "n": 1
-    }),
-    "gpt-4o-mini": ModelConfig("gpt-4o-mini", ModelType.TEXT, {
-        "temperature": 1.0,
-        "max_tokens": 4000
-    }),
-    "o1-mini": ModelConfig("o1-mini", ModelType.TEXT, {
-        "temperature": 1.0,
-        "max_tokens": 4000
-    }),
-    "o1-preview": ModelConfig("o1-preview", ModelType.TEXT, {
-        "temperature": 1.0,
-        "max_tokens": 4000
-    })
+    "gpt-3.5-turbo": ModelConfig(
+        "gpt-3.5-turbo",
+        ModelType.TEXT, 
+        {
+            "temperature": 1.0,
+            "max_tokens": 4000
+        },
+        input_price=0.003,   # 每1000 tokens的价格
+        output_price=0.006
+    ),
+    "gpt-4o": ModelConfig("gpt-4o", ModelType.TEXT, 
+        {
+            "temperature": 1.0,
+            "max_tokens": 4000
+        },
+        input_price=0.0025,
+        output_price=0.01
+    ),
+    "dall-e-3": ModelConfig("dall-e-3", ModelType.IMAGE, 
+        {
+            "size": "1024x1024",
+            "quality": "standard",
+            "n": 1
+        },
+        output_price=0.04  # 每张图片的价格
+    ),
+    "gpt-4o-mini": ModelConfig("gpt-4o-mini", ModelType.TEXT, 
+        {
+            "temperature": 1.0,
+            "max_tokens": 4000
+        },
+        input_price=0.00015,
+        output_price=0.0006
+    ),
+    "o1-mini": ModelConfig("o1-mini", ModelType.TEXT, 
+        {
+            "temperature": 1.0,
+            "max_tokens": 4000
+        },
+        input_price=0.003,
+        output_price=0.012
+    ),
+    "o1-preview": ModelConfig("o1-preview", ModelType.TEXT, 
+        {
+            "temperature": 1.0,
+            "max_tokens": 4000
+        },
+        input_price=0.015,
+        output_price=0.06
+    )
 } 
