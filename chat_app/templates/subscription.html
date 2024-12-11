@@ -18,7 +18,7 @@
         {% for plan_id, plan in plans.items() %}
         <div class="plan-card">
             <h3>{{ plan.name }}</h3>
-            <div class="price">¥{{ plan.price }}/月</div>
+            <div class="price">${{ plan.price }}(美元)/月</div>
             <div class="points">{{ plan.points }} 积分</div>
             <ul class="plan-features">
                 <li>无限对话次数</li>

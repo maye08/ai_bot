@@ -17,6 +17,7 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(128))
     chat_id = db.Column(db.String(36), unique=True, nullable=False)
+    # is_admin = db.Column(db.Boolean, default=False)  # 添加管理员标志
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def __init__(self, username):
@@ -82,6 +83,7 @@ class Subscription(db.Model):
         return self.status == 'active' and self.end_date > datetime.utcnow()
 
 class PaymentRecord(db.Model):
+    """支付记录"""
     __tablename__ = 'payment_records'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.String(36), db.ForeignKey('users.chat_id'), nullable=False)
@@ -90,3 +92,6 @@ class PaymentRecord(db.Model):
     status = db.Column(db.String(20), default='pending')  # pending, success, failed
     payment_time = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    paid_at = db.Column(db.DateTime)
+
+    user = db.relationship('User', backref=db.backref('payments', lazy=True))

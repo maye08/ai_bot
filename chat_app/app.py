@@ -18,6 +18,7 @@ import string
 import base64
 from models.model_config import ModelProcessor, MODELS_CONFIG, ModelType
 import sys
+from utils.exchange_rate import get_exchange_rate_pbc
 
 # 修改这行导入，添加 Subscription 和 PaymentRecord
 from models.database_models import (
@@ -784,12 +785,17 @@ def create_order():
             
         plan = SUBSCRIPTION_PLANS[plan_type]
         order_id = f"SUB_{datetime.now().strftime('%Y%m%d%H%M%S')}_{current_user.id}"
+
+        # 获取美元金额
+        usd_amount = plan['price']
+        # 转换为人民币
+        cny_amount = get_exchange_rate_pbc() * usd_amount
         
         # 创建支付宝订单
         alipay = get_alipay_client()
         order_string = alipay.api_alipay_trade_page_pay(
             out_trade_no=order_id,
-            total_amount=str(plan['price']),
+            total_amount=str(cny_amount),
             subject=f"AI助手{plan['name']}",
             return_url=url_for('payment_callback', _external=True),
             notify_url=url_for('payment_notify', _external=True)
@@ -799,7 +805,8 @@ def create_order():
         payment = PaymentRecord(
             user_id=current_user.chat_id,
             order_id=order_id,
-            amount=plan['price']
+            amount=cny_amount,
+            status='pending'
         )
         db.session.add(payment)
         db.session.commit()
@@ -812,6 +819,63 @@ def create_order():
     except Exception as e:
         logger.error(f"创建订单失败: {str(e)}")
         return jsonify({'error': '创建订单失败'}), 500
+    
+@app.route('/payment/notify', methods=['POST'])
+def payment_notify():
+    """支付宝异步通知处理"""
+    try:
+        # 获取支付宝POST过来的数据
+        data = request.form.to_dict()
+        
+        # 验证签名
+        alipay = get_alipay_client()
+        signature = data.pop("sign")
+        success = alipay.verify(data, signature)
+        
+        if success and data["trade_status"] in ("TRADE_SUCCESS", "TRADE_FINISHED"):
+            # 获取订单号
+            order_id = data.get('out_trade_no')
+            trade_no = data.get('trade_no')  # 支付宝交易号
+            
+            # 更新支付记录
+            payment = PaymentRecord.query.filter_by(order_id=order_id).first()
+            if payment:
+                payment.status = 'paid'
+                payment.trade_no = trade_no
+                payment.paid_at = datetime.now()
+                
+                # 更新用户订阅
+                subscription = Subscription.query.filter_by(
+                    user_id=payment.user_id,
+                    status='active'
+                ).first()
+                
+                if not subscription:
+                    subscription = Subscription(
+                        user_id=payment.user_id,
+                        plan_type='paid',
+                        points=100000,  # 或其他适当的积分数量
+                        start_date=datetime.now(),
+                        end_date=datetime.now() + timedelta(days=30),
+                        status='active'
+                    )
+                    db.session.add(subscription)
+                else:
+                    subscription.points += 100000  # 增加积分
+                    subscription.end_date = max(
+                        subscription.end_date,
+                        datetime.now()
+                    ) + timedelta(days=30)
+                
+                db.session.commit()
+                
+            return 'success'
+        
+        return 'fail'
+        
+    except Exception as e:
+        logger.error(f"处理支付回调时出错: {str(e)}")
+        return 'fail'
 
 @app.route('/payment_callback')
 def payment_callback():
