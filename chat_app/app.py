@@ -42,7 +42,7 @@ SUBSCRIPTION_PLANS = {
         'name': '月度订阅',
         'price': 0.99,
         'points': 100000,
-        'duration': 30  # 天数
+        'duration': 31  # 天数
     },
     'yearly': {
         'name': '年度订阅',
@@ -788,10 +788,14 @@ def subscription_page():
         user_id=current_user.chat_id,
         status='active'
     ).first()
+
+    logger.debug(f"User {current_user.username} subscription info: {subscription.__dict__ if subscription else None}")
+    logger.debug(f"Available plans: {SUBSCRIPTION_PLANS}")
     
     return render_template('subscription.html', 
         plans=SUBSCRIPTION_PLANS,
-        current_subscription=subscription
+        subscription=subscription,
+        SUBSCRIPTION_PLANS=SUBSCRIPTION_PLANS
     )
 
 @app.route('/create_order', methods=['POST'])
@@ -866,7 +870,7 @@ def payment_notify():
             
             # 更新支付记录
             payment = PaymentRecord.query.filter_by(order_id=order_id).first()
-            if payment:
+            if payment and payment.status == 'pending': # 只处理待支付的订单
                 payment.status = 'paid'
                 payment.trade_no = trade_no
                 payment.paid_at = datetime.now()
@@ -880,21 +884,28 @@ def payment_notify():
                 if not subscription:
                     subscription = Subscription(
                         user_id=payment.user_id,
-                        plan_type='paid',
-                        points=100000,  # 或其他适当的积分数量
+                        plan_type=payment.plan_type,  # 使用订单中记录的计划类型,
+                        points=SUBSCRIPTION_PLANS[payment.plan_type]['points'],  # 或其他适当的积分数量
                         start_date=datetime.now(),
-                        end_date=datetime.now() + timedelta(days=30),
+                        end_date=datetime.now() + timedelta(days=SUBSCRIPTION_PLANS[payment.plan_type]['duration']),
                         status='active'
                     )
                     db.session.add(subscription)
                 else:
-                    subscription.points += 100000  # 增加积分
-                    subscription.end_date = max(
-                        subscription.end_date,
-                        datetime.now()
-                    ) + timedelta(days=30)
+                    subscription.plan_type = payment.plan_type
+                    # 如果是免费用户首次订阅
+                    if subscription.plan_type == 'free':
+                        subscription.points = SUBSCRIPTION_PLANS[payment.plan_type]['points']
+                        subscription.end_date = datetime.now() + timedelta(days=SUBSCRIPTION_PLANS[payment.plan_type]['duration'])
+                    else:
+                        subscription.points += SUBSCRIPTION_PLANS[payment.plan_type]['points']
+                        subscription.end_date = max(
+                            subscription.end_date,
+                            datetime.now()
+                        ) + timedelta(days=SUBSCRIPTION_PLANS[payment.plan_type]['duration'])
                 
                 db.session.commit()
+                logger.info(f"Payment {order_id} processed successfully via notify")
                 
             return 'success'
         
@@ -928,14 +939,15 @@ def payment_callback():
                 ).first()
                 
                 if subscription:
-                    subscription.points += SUBSCRIPTION_PLANS['monthly']['points']
+                    subscription.points += SUBSCRIPTION_PLANS[payment.plan_type]['points']
+                    subscription.plan_type = payment.plan_type  # 添加这行
                 else:
                     subscription = Subscription(
                         user_id=payment.user_id,
-                        plan_type='monthly',
-                        points=SUBSCRIPTION_PLANS['monthly']['points'],
+                        plan_type=payment.plan_type,
+                        points=SUBSCRIPTION_PLANS[payment.plan_type]['points'],
                         start_date=datetime.now(),
-                        end_date=datetime.now() + timedelta(days=30)
+                        end_date=datetime.now() + timedelta(days=SUBSCRIPTION_PLANS[payment.plan_type]['duration'])
                     )
                     db.session.add(subscription)
                 

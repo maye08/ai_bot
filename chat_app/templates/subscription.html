@@ -6,10 +6,29 @@
 <div class="subscription-container">
     <div class="subscription-header">
         <h2>订阅服务</h2>
-        {% if subscription and subscription.is_active() %}
+        {% if subscription and subscription.is_active() and subscription.plan_type in SUBSCRIPTION_PLANS %}
             <div class="current-subscription">
+                <!-- 添加调试信息 -->
+                <!-- 
+                subscription: {{ subscription }}
+                is_active: {{ subscription.is_active() }}
+                plan_type: {{ subscription.plan_type }}
+                available_plans: {{ SUBSCRIPTION_PLANS.keys()|list }}
+                -->
+                <p>当前订阅: {{ SUBSCRIPTION_PLANS[subscription.plan_type]['name'] }}</p>
                 <p>当前积分: {{ subscription.points }}</p>
                 <p>到期时间: {{ subscription.end_date.strftime('%Y-%m-%d') }}</p>
+            </div>
+        {% else %}
+            <div class="current-subscription">
+                <!-- 添加调试信息 -->
+                <!-- 
+                subscription: {{ subscription }}
+                is_active: {{ subscription.is_active() if subscription else None }}
+                plan_type: {{ subscription.plan_type if subscription else None }}
+                -->
+                <p>当前为免费用户</p>
+                <p>剩余积分: {{ subscription.points if subscription else 0 }}</p>
             </div>
         {% endif %}
     </div>
