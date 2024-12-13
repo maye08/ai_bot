@@ -19,6 +19,7 @@ import base64
 from models.model_config import ModelProcessor, MODELS_CONFIG, ModelType
 import sys
 from utils.exchange_rate import get_exchange_rate_pbc
+import time
 
 # 修改这行导入，添加 Subscription 和 PaymentRecord
 from models.database_models import (
@@ -42,6 +43,12 @@ SUBSCRIPTION_PLANS = {
         'price': 0.99,
         'points': 100000,
         'duration': 30  # 天数
+    },
+    'yearly': {
+        'name': '年度订阅',
+        'price': 11.99,
+        'points': 1200000,
+        'duration':365  # 天数
     }
 }
 
@@ -797,28 +804,34 @@ def create_order():
             return jsonify({'error': '无效的订阅计划'}), 400
             
         plan = SUBSCRIPTION_PLANS[plan_type]
-        order_id = f"SUB_{datetime.now().strftime('%Y%m%d%H%M%S')}_{current_user.id}"
+        # 生成唯一订单号
+        order_id = f"SUB{int(time.time())}{current_user.id}"
 
         # 获取美元金额
         usd_amount = plan['price']
         # 转换为人民币
         cny_amount = get_exchange_rate_pbc() * usd_amount
+
+        # 获取金额并确保是字符串类型且最多保留两位小数
+        cny_amount = "{:.2f}".format(cny_amount)
         
         # 创建支付宝订单
         alipay = get_alipay_client()
         order_string = alipay.api_alipay_trade_page_pay(
             out_trade_no=order_id,
-            total_amount=str(cny_amount),
-            subject=f"AI助手{plan['name']}",
+            total_amount=cny_amount,
+            subject=f"AI助手{plan['name']}订阅",
             return_url=url_for('payment_callback', _external=True),
-            notify_url=url_for('payment_notify', _external=True)
+            notify_url=url_for('payment_notify', _external=True),
+            product_code="FAST_INSTANT_TRADE_PAY"
         )
         
         # 记录订单
         payment = PaymentRecord(
             user_id=current_user.chat_id,
             order_id=order_id,
-            amount=cny_amount,
+            amount=float(cny_amount),
+            plan_type=plan_type,
             status='pending'
         )
         db.session.add(payment)
@@ -826,11 +839,12 @@ def create_order():
         
         return jsonify({
             'order_string': order_string,
-            'payment_url': f"https://openapi.alipay.com/gateway.do?{order_string}"
+            'payment_url': f"https://openapi-sandbox.dl.alipaydev.com/gateway.do?{order_string}"
         })
         
     except Exception as e:
         logger.error(f"创建订单失败: {str(e)}")
+        db.session.rollback()
         return jsonify({'error': '创建订单失败'}), 500
     
 @app.route('/payment/notify', methods=['POST'])

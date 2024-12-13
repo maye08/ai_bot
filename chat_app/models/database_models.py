@@ -93,5 +93,8 @@ class PaymentRecord(db.Model):
     payment_time = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     paid_at = db.Column(db.DateTime)
+    plan_type = db.Column(db.String(32), nullable=False)
 
     user = db.relationship('User', backref=db.backref('payments', lazy=True))
+    def __init__(self, **kwargs):
+        super(PaymentRecord, self).__init__(**kwargs)
