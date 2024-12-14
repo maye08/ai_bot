@@ -40,12 +40,14 @@ from chat_app.config.alipay_config import get_alipay_client
 SUBSCRIPTION_PLANS = {
     'monthly': {
         'name': '月度订阅',
+        'period': '月',
         'price': 0.99,
         'points': 100000,
         'duration': 31  # 天数
     },
     'yearly': {
         'name': '年度订阅',
+        'period': '年',
         'price': 11.99,
         'points': 1200000,
         'duration':365  # 天数
