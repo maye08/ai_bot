@@ -20,6 +20,10 @@ from models.model_config import ModelProcessor, MODELS_CONFIG, ModelType
 import sys
 from utils.exchange_rate import get_exchange_rate_pbc
 import time
+from urllib.request import urlopen
+from urllib.error import URLError
+import re
+from urllib.parse import urlparse
 
 # 修改这行导入，添加 Subscription 和 PaymentRecord
 from models.database_models import (
@@ -53,6 +57,24 @@ SUBSCRIPTION_PLANS = {
         'duration':365  # 天数
     }
 }
+
+def is_valid_image_url(url):
+    """简单检查图片URL是否可被下载"""
+    try:
+        with urlopen(url, timeout=5) as response:
+            # 只读取前几个字节就关闭连接
+            response.read(1024)
+            return True
+    except Exception:  # 捕获所有可能的异常
+        return False
+
+def is_valid_url(url):
+    """检查URL是否有效"""
+    try:
+        with urlopen(url, timeout=5) as response:
+            return response.getcode() == 200
+    except Exception:
+        return False
 
 def setup_logger():
     # 创建 logs 目录
@@ -159,6 +181,56 @@ def trim_messages(messages, max_context_length):
         else:  # 如果没有找到非系统消息
             break
     return messages
+
+def clean_messages(messages):
+    """清理消息列表中的无效链接"""
+    if not messages:
+        return messages
+    
+    # URL正则表达式模式
+    url_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+' 
+    cleaned_messages = []
+    
+    for message in messages:
+        # 跳过系统消息
+        if message.get('role') == 'system':
+            cleaned_messages.append(message)
+            continue
+            
+        content = message.get('content', '')
+        should_keep = True
+        
+        # 处理不同类型的content
+        if isinstance(content, str):
+            # 查找文本中的所有URL
+            urls = re.findall(url_pattern, content)
+            for url in urls:
+                if not is_valid_url(url):
+                    should_keep = False
+                    break
+                    
+        elif isinstance(content, list):
+            # 处理多模态消息
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get('type') == 'image_url':
+                        url = item.get('image_url', {}).get('url', '')
+                        if url and not is_valid_url(url):
+                            should_keep = False
+                            break
+                    elif item.get('type') == 'text':
+                        urls = re.findall(url_pattern, item.get('text', ''))
+                        for url in urls:
+                            if not is_valid_url(url):
+                                should_keep = False
+                                break
+                        if not should_keep:
+                            break
+        
+        if should_keep:
+            cleaned_messages.append(message)
+    
+    return cleaned_messages
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -283,12 +355,13 @@ def chat_message():
                         if line.startswith('![') and '](' in line and line.endswith(')'):
                             # 提取图片URL
                             image_url = line[line.index('(')+1:-1]
-                            image_content.append({
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_url
-                                }
-                            })
+                            if is_valid_image_url(image_url):
+                                image_content.append({
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": image_url
+                                    }
+                                })
                         else:
                             # 保存非图片的文本内容
                             line = line.strip()
@@ -306,14 +379,21 @@ def chat_message():
 
             
                     # 构建带图片的消息
-                    current_messages.append({
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": context_text},
-                            *image_content
-                        ]
-                    })
-                else:
+                    if image_content:
+                        current_messages.append({
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": context_text},
+                                *image_content
+                            ]
+                        })
+                    else:
+                        current_messages.append({
+                            "role": "user",
+                            "content": user_text
+                        })
+
+                else:# message type is TEXT
                     if current_messages and len(current_messages) > 1:
                         msg = current_messages[-1] # 最后一条消息是AI生成的图片
                         if msg['role'] == 'assistant' and msg['type'] == 'image':
@@ -321,28 +401,70 @@ def chat_message():
                             # 提取图片URL
                             image_url = msg.get('content', '')
                             image_content = []
-                            image_content.append({
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_url
-                                }
-                            })
-                            # 构建带图片的消息
-                            current_messages.append({
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": user_message},
-                                    *image_content
-                                ]
-                            })
+                            if is_valid_image_url(image_url):
+                                image_content.append({
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": image_url
+                                    }
+                                })
+                                # 构建带图片的消息
+                                current_messages.append({
+                                    "role": "user",
+                                    "content": [
+                                        {"type": "text", "text": user_message},
+                                        *image_content
+                                    ]
+                                })
+                            else:
+                                # 处理普通文本消息
+                                current_messages.append({
+                                    "role": "user",
+                                    "content": user_message
+                                })
+                            
                         else:        
-                            # 处理普通文本消息
-                            current_messages.append({
-                                "role": "user",
-                                "content": user_message
-                            })
+                            # 检查user_message是否为列表格式
+                            if isinstance(user_message, list):
+                                # 处理列表格式的消息
+                                message_content = []
+                                for item in user_message:
+                                    if isinstance(item, dict):
+                                        # 处理图片URL
+                                        if 'image_url' in item:
+                                            url = item['image_url'].get('url', '')
+                                            if is_valid_image_url(url):
+                                                message_content.append({
+                                                    "type": "image_url",
+                                                    "image_url": {"url": url}
+                                                })
+                                        # 处理文本内容
+                                        elif 'text' in item:
+                                            message_content.append({
+                                                "type": "text",
+                                                "text": item['text']
+                                            })
+                                
+                                # 添加处理后的消息
+                                if message_content:
+                                    current_messages.append({
+                                        "role": "user",
+                                        "content": message_content
+                                    })
+                            else:
+                                # 处理普通文本消息
+                                if current_messages and len(current_messages) > 1:
+                                # 清理无效链接
+                                    current_messages = clean_messages(current_messages)
+                                current_messages.append({
+                                    "role": "user",
+                                    "content": user_message
+                                })
                     else:
                         # 处理普通文本消息
+                        if current_messages and len(current_messages) > 1:
+                                # 清理无效链接
+                                current_messages = clean_messages(current_messages)
                         current_messages.append({
                             "role": "user",
                             "content": user_message
@@ -360,7 +482,7 @@ def chat_message():
                 if response.get("type") != 'error':
                     current_messages.append({"role": "assistant", "content": response["content"], "type": "text"})
                 else:
-                    current_messages.append({"role": "system", "content": response["content"], "type": "error"})
+                    current_messages.append({"role": "system", "content": "服务器返回错误", "type": "error"})
                 chat_session.messages = current_messages
                 chat_session.last_message = user_message  # 更新最后一条消息
                 chat_session.last_updated = datetime.utcnow()
@@ -491,14 +613,14 @@ def chat_message():
             return jsonify({
                 "response": {
                     "type": "error",
-                    "content": f"处理失败: {str(e)}",
+                    "content": "处理失败",
                     "status": "error"
                 }
             }), 500
             
     except Exception as e:
         logger.error(f"Chat error for user {current_user.chat_id}: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"error": f"服务器错误: {str(e)}"}), 500
+        return jsonify({"error": "服务器错误"}), 500
 
 @app.route('/clear_chat', methods=['POST'])
 @login_required
