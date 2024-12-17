@@ -157,6 +157,15 @@ SYSTEM_MESSAGE = {
 4. 保持对话的连贯性和上下文关联"""
 }
 
+SYSTEM_MESSAGE_O = {
+    "role": "user",
+    "content": """你是一个AI助手。请严格遵守以下规则：
+1. 记住并使用当前对话中的所有信息
+2. 当用户询问身份相关信息时，从对话历史中查找最新的相关信息
+3. 如果找到相关信息，请明确回答
+4. 保持对话的连贯性和上下文关联"""
+}
+
 def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
     """计算消息的 token 数量"""
     encoding = tiktoken.encoding_for_model(model)
@@ -182,7 +191,7 @@ def trim_messages(messages, max_context_length):
             break
     return messages
 
-def clean_messages(messages):
+def clean_messages(messages, model_id):
     """清理消息列表中的无效链接"""
     if not messages:
         return messages
@@ -194,6 +203,8 @@ def clean_messages(messages):
     for message in messages:
         # 跳过系统消息
         if message.get('role') == 'system':
+            if model_id == 'o1-preview' or model_id == 'o1-mini':
+                continue
             cleaned_messages.append(message)
             continue
             
@@ -302,7 +313,7 @@ def chat_message():
             "error": "积分不足，请订阅以获取更多积分",
             "code": "INSUFFICIENT_POINTS"
         }), 403
-    """处理聊天请求"""
+    """处理聊天请求"""    
     try:
         session_id = request.json.get('session_id')
         chat_session = ChatSession.query.filter_by(
@@ -314,7 +325,7 @@ def chat_message():
             return jsonify({"error": "对话不存在"}), 404
             
         user_message = request.json.get('message', '')
-        model_id = request.json.get('model', 'gpt-3.5-turbo')
+        model_id = request.json.get('model', 'gpt-4o-mini')
         message_type = request.json.get('type', 'text')  # 添加这行来获取消息类型
 
         if model_id not in MODELS_CONFIG:
@@ -324,7 +335,10 @@ def chat_message():
         
         try:
             if model_config.model_type == ModelType.TEXT:
-                current_messages = chat_session.messages.copy() if isinstance(chat_session.messages, list) else [SYSTEM_MESSAGE]
+                if model_id == 'o1-preview' or model_id == 'o1-mini':
+                    current_messages = chat_session.messages.copy() if isinstance(chat_session.messages, list) else [SYSTEM_MESSAGE_O]
+                else:
+                    current_messages = chat_session.messages.copy() if isinstance(chat_session.messages, list) else [SYSTEM_MESSAGE]
                 # 提取除了最后一条图片消息外的所有文本内容
 
                 # 处理图片消息
@@ -455,7 +469,7 @@ def chat_message():
                                 # 处理普通文本消息
                                 if current_messages and len(current_messages) > 1:
                                 # 清理无效链接
-                                    current_messages = clean_messages(current_messages)
+                                    current_messages = clean_messages(current_messages, model_id)
                                 current_messages.append({
                                     "role": "user",
                                     "content": user_message
@@ -464,15 +478,16 @@ def chat_message():
                         # 处理普通文本消息
                         if current_messages and len(current_messages) > 1:
                                 # 清理无效链接
-                                current_messages = clean_messages(current_messages)
+                                current_messages = clean_messages(current_messages, model_id)
                         current_messages.append({
                             "role": "user",
                             "content": user_message
                         })
                 params = model_config.params.copy()
-                if 'max_output_tokens' in params:
-                    params['max_tokens'] = params.pop('max_output_tokens')
+                if 'max_completion_tokens' in params:
+                    params['max_completion_tokens'] = params.pop('max_completion_tokens')
                 
+                current_messages = clean_messages(current_messages, model_id)
                 response = model_processor.process_text(
                     messages=current_messages,
                     model_id=model_id,
@@ -530,7 +545,10 @@ def chat_message():
                         return jsonify({"error": "对话不存在"}), 404
                 
                     # 创建新的消息列表
-                    new_messages = list(chat_session.messages) if chat_session.messages else [SYSTEM_MESSAGE]
+                    if model_id == 'o1-mini' or model_id == 'o1-preview':
+                        new_messages = list(chat_session.messages) if chat_session.messages else [SYSTEM_MESSAGE_O]
+                    else:
+                        new_messages = list(chat_session.messages) if chat_session.messages else [SYSTEM_MESSAGE]
                 
                     # 添加用户消息
                     new_messages.append({

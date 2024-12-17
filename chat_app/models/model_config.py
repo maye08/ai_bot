@@ -121,16 +121,16 @@ MODELS_CONFIG = {
         "gpt-3.5-turbo",
         ModelType.TEXT, 
         {
-            "temperature": 1.0,
-            "max_tokens": 4000
+            "temperature": 0.8,
+            "max_completion_tokens": 4000
         },
         input_price=0.003,   # 每1000 tokens的价格
         output_price=0.006
     ),
     "gpt-4o": ModelConfig("gpt-4o", ModelType.TEXT, 
         {
-            "temperature": 1.0,
-            "max_tokens": 4000
+            "temperature": 0.8,
+            "max_completion_tokens": 16384
         },
         input_price=0.0025,
         output_price=0.01
@@ -145,8 +145,8 @@ MODELS_CONFIG = {
     ),
     "gpt-4o-mini": ModelConfig("gpt-4o-mini", ModelType.TEXT, 
         {
-            "temperature": 1.0,
-            "max_tokens": 4000
+            "temperature": 0.8,
+            "max_completion_tokens": 16384
         },
         input_price=0.00015,
         output_price=0.0006
@@ -154,7 +154,7 @@ MODELS_CONFIG = {
     "o1-mini": ModelConfig("o1-mini", ModelType.TEXT, 
         {
             "temperature": 1.0,
-            "max_tokens": 4000
+            "max_completion_tokens": 65536
         },
         input_price=0.003,
         output_price=0.012
@@ -162,7 +162,7 @@ MODELS_CONFIG = {
     "o1-preview": ModelConfig("o1-preview", ModelType.TEXT, 
         {
             "temperature": 1.0,
-            "max_tokens": 4000
+            "max_completion_tokens": 32768
         },
         input_price=0.015,
         output_price=0.06
