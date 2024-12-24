@@ -339,6 +339,7 @@ button:disabled {
     padding: 10px;
     border-radius: 4px;
     overflow-x: auto;
+    line-height: 1.2; /* 代码块行间距 */
 }
 
 .message-content code {
@@ -426,7 +427,7 @@ code[class*="language-"] {
     text-shadow: none !important;
     font-family: 'Consolas', 'Monaco', 'Andale Mono', monospace;
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.2;
 }
 
 .subscription-container {
