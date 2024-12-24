@@ -1,5 +1,6 @@
 body {
     justify-content: center;
+    align-items: center; /* 新增 */
     font-family: Arial, sans-serif;
     margin: 0;
     padding: 0;
@@ -56,7 +57,7 @@ body {
 .chat-container {
     display: flex;
     gap: 20px;
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
 }
 
@@ -183,6 +184,7 @@ body {
 }
 
 .message-container {
+    flex: 1;
     height: calc(100vh - 280px); /* 调整高度，为输入区域和token信息留出空间 */
     overflow-y: auto;
     margin-bottom: 20px;
