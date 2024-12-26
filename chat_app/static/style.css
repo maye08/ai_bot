@@ -150,28 +150,24 @@ body {
     right: 8px;
     top: 50%;
     transform: translateY(-50%);
-    background: rgba(255, 255, 255, 0.9);
-    padding: 4px;
-    border-radius: 4px;
 }
 
 .chat-item:hover .chat-item-actions {
-    display: flex;      /* 悬停时显示 */
-    gap: 4px;
+    display: block;
 }
 
 .delete-btn {
-    padding: 2px 6px;
-    font-size: 12px;
-    background-color: #ff4444;
-    color: white;
+    background: none; /* 背景全透明 */
+    color: rgba(255, 0, 0, 0.5); /* 红叉有一定透明度 */
     border: none;
-    border-radius: 3px;
+    font-size: 16px; /* 调整红叉大小 */
     cursor: pointer;
+    transition: color 0.3s; /* 添加过渡效果 */
 }
 
 .delete-btn:hover {
-    background-color: #cc0000;
+    color: rgb(255, 0, 0); /* 鼠标移到红叉上时不透明 */
+    background: none; /* 背景全透明 */
 }
 
 .chat-item:hover {
