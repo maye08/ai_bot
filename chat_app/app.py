@@ -70,6 +70,8 @@ def is_valid_image_url(url):
 
 def is_valid_url(url):
     """检查URL是否有效"""
+    if "data:image/" in url:
+        return True
     try:
         with urlopen(url, timeout=5) as response:
             return response.getcode() == 200
