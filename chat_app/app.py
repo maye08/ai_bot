@@ -24,6 +24,9 @@ from urllib.request import urlopen
 from urllib.error import URLError
 import re
 from urllib.parse import urlparse
+import stripe
+
+stripe.api_key = os.environ.get("STRIPE_API_KEY")
 
 # 修改这行导入，添加 Subscription 和 PaymentRecord
 from models.database_models import (
@@ -45,14 +48,20 @@ SUBSCRIPTION_PLANS = {
     'monthly': {
         'name': '月度订阅',
         'period': '月',
+        'interval': 'month',
+        'interval_count': 1,
         'price': 0.99,
+        'price_id': 'price_1QZuYbICJ6vWDmTZ3BjqX38P',
         'points': 100000,
         'duration': 31  # 天数
     },
     'yearly': {
         'name': '年度订阅',
         'period': '年',
-        'price': 11.99,
+        'interval': 'year',
+        'interval_count': 1,
+        'price': 11.79,
+        'price_id': 'price_1QcQzRICJ6vWDmTZrQRMJH25',
         'points': 1200000,
         'duration':365  # 天数
     }
@@ -762,7 +771,7 @@ def register():
         
     try:
         # 创建新用户
-        user = User(username=data.get('username'))
+        user = User(username=data.get('username'), email=data.get('email'))
         user.set_password(data.get('password'))
         
         chat_history = ChatHistory(
@@ -945,55 +954,32 @@ def subscription_page():
 @app.route('/create_order', methods=['POST'])
 @login_required
 def create_order():
-    """创建订单"""
+    user = current_user
+    if not user.is_authenticated:
+        return jsonify({'error': '未登录'}), 401
+
+    plan_type = request.json.get('plan_type')
+    if plan_type not in SUBSCRIPTION_PLANS:
+        return jsonify({'error': '无效的订阅类型'}), 400
+
     try:
-        plan_type = request.json.get('plan_type')
-        if plan_type not in SUBSCRIPTION_PLANS:
-            return jsonify({'error': '无效的订阅计划'}), 400
-            
-        plan = SUBSCRIPTION_PLANS[plan_type]
-        # 生成唯一订单号
-        order_id = f"SUB{int(time.time())}{current_user.id}"
-
-        # 获取美元金额
-        usd_amount = plan['price']
-        # 转换为人民币
-        cny_amount = get_exchange_rate_pbc() * usd_amount
-
-        # 获取金额并确保是字符串类型且最多保留两位小数
-        cny_amount = "{:.2f}".format(cny_amount)
-        
-        # 创建支付宝订单
-        alipay = get_alipay_client()
-        order_string = alipay.api_alipay_trade_page_pay(
-            out_trade_no=order_id,
-            total_amount=cny_amount,
-            subject=f"AI助手{plan['name']}订阅",
-            return_url=url_for('payment_callback', _external=True),
-            notify_url=url_for('payment_notify', _external=True),
-            product_code="FAST_INSTANT_TRADE_PAY"
+        checkout_session = stripe.checkout.Session.create(
+            customer_email=user.email,  # 使用用户的email
+            payment_method_types=['card'],
+            line_items=[
+                {
+                    'price': SUBSCRIPTION_PLANS[plan_type]['price_id'], #### here
+                    'quantity': 1,
+                },
+            ],
+            mode='subscription',
+            success_url=request.host_url + 'subscription?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url=request.host_url + 'subscription',
+            metadata={'plan_type': plan_type}
         )
-        
-        # 记录订单
-        payment = PaymentRecord(
-            user_id=current_user.chat_id,
-            order_id=order_id,
-            amount=float(cny_amount),
-            plan_type=plan_type,
-            status='pending'
-        )
-        db.session.add(payment)
-        db.session.commit()
-        
-        return jsonify({
-            'order_string': order_string,
-            'payment_url': f"https://openapi-sandbox.dl.alipaydev.com/gateway.do?{order_string}"
-        })
-        
+        return jsonify({'payment_url': checkout_session.url})
     except Exception as e:
-        logger.error(f"创建订单失败: {str(e)}")
-        db.session.rollback()
-        return jsonify({'error': '创建订单失败'}), 500
+        return jsonify({'error': str(e)}), 500
     
 @app.route('/payment/notify', methods=['POST'])
 def payment_notify():
@@ -1151,6 +1137,50 @@ def calculate_points(model_id: str, response_data: dict) -> int:
         points = model_config.output_price * 100000
         
     return int(points)
+
+@app.route('/webhook', methods=['POST'])
+def stripe_webhook():
+    payload = request.get_data(as_text=True)
+    sig_header = request.headers.get('Stripe-Signature')
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, stripe.api_key
+        )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except stripe.error.SignatureVerificationError as e:
+        return jsonify({'error': str(e)}), 400
+
+    # 处理付款成功事件
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        plan_type = session.metadata.get('plan_type')
+
+        # 更新用户订阅信息
+        subscription = Subscription.query.filter_by(
+            user_id=current_user.id,
+            status='active'
+        ).first()
+
+        if not subscription:
+            subscription = Subscription(
+                user_id=current_user.id,
+                plan_type=plan_type,
+                points=SUBSCRIPTION_PLANS[plan_type]['points'],
+                start_date=datetime.utcnow(),
+                end_date=datetime.utcnow() + timedelta(days=SUBSCRIPTION_PLANS[plan_type]['duration'])
+            )
+        else:
+            subscription.plan_type = plan_type
+            subscription.points += SUBSCRIPTION_PLANS[plan_type]['points']
+            subscription.end_date = max(subscription.end_date, datetime.utcnow()) + timedelta(days=SUBSCRIPTION_PLANS[plan_type]['duration'])
+
+        db.session.add(subscription)
+        db.session.commit()
+
+    return jsonify({'success': True})
+
 
 if __name__ == '__main__':
     with app.app_context():

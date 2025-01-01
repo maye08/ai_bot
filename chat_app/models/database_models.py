@@ -15,13 +15,15 @@ class User(UserMixin, db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)  # 新增email字段
     password_hash = db.Column(db.String(128))
     chat_id = db.Column(db.String(36), unique=True, nullable=False)
     # is_admin = db.Column(db.Boolean, default=False)  # 添加管理员标志
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    def __init__(self, username):
+    def __init__(self, username, email):
         self.username = username
+        self.email = email  # 初始化email
         self.chat_id = str(uuid.uuid4())
     
     def set_password(self, password):
