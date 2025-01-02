@@ -44,7 +44,7 @@
                 <li>高级AI模型支持</li>
                 <li>优先客服支持</li>
             </ul>
-            <button onclick="subscribe('{{ plan_id }}')" class="subscribe-btn">
+            <button onclick="createCheckoutSession('{{ plan_id }}')" class="subscribe-btn">
                 立即订阅
             </button>
         </div>
@@ -74,6 +74,27 @@ async function subscribe(planType) {
         console.error('Error:', error);
         alert('订阅失败: ' + error.message);
     }
+}
+function createCheckoutSession(planType) {
+    fetch('/create_order', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ plan_type: planType })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert(data.error);
+        } else {
+            window.location.href = data.payment_url;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('发生错误,请重试');
+    });
 }
 </script>
 {% endblock %}
