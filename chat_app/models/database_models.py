@@ -74,6 +74,7 @@ class Subscription(db.Model):
     __tablename__ = 'subscriptions'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.String(36), db.ForeignKey('users.chat_id'), nullable=False)
+    user_email = db.Column(db.String(120), nullable=False)
     plan_type = db.Column(db.String(50), nullable=False)  # 订阅类型
     points = db.Column(db.Integer, default=0)  # 剩余积分
     start_date = db.Column(db.DateTime, nullable=False)

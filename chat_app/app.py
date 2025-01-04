@@ -1,3 +1,4 @@
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from openai import OpenAI
 import tiktoken
@@ -27,6 +28,7 @@ from urllib.parse import urlparse
 import stripe
 
 stripe.api_key = os.environ.get("STRIPE_API_KEY")
+endpoint_secret = os.getenv('STRIPE_ENDPOINT_SECRET')
 
 # 修改这行导入，添加 Subscription 和 PaymentRecord
 from models.database_models import (
@@ -262,7 +264,9 @@ def load_user(user_id):
 def before_request():
     """请求预处理：检查会话是否过期"""
     # 添加 get_captcha 到白名单
-    if request.endpoint in ['static', 'login', 'register', 'logout', 'get_captcha']:
+    logger.error(f"request endpoint is {request.endpoint}")
+    logger.error(f"request path is {request.path}")
+    if request.endpoint in ['stripe_webhook', 'static', 'login', 'register', 'logout', 'get_captcha']:
         return
     
     if not current_user.is_authenticated:
@@ -785,6 +789,7 @@ def register():
         # 添加默认订阅计划
         subscription = Subscription(
             user_id=user.chat_id,
+            user_email=user.email,
             plan_type='free',
             points=1000,  # 默认赠送的积分
             start_date=datetime.utcnow(),
@@ -1140,18 +1145,24 @@ def calculate_points(model_id: str, response_data: dict) -> int:
 
 @app.route('/webhook', methods=['POST'])
 def stripe_webhook():
-    payload = request.get_data(as_text=True)
+    #payload = request.get_data(as_text=True)
+    payload = request.data
+    logger.info(f"Stripe webhook payload: {payload}")
     sig_header = request.headers.get('Stripe-Signature')
+    logger.info(f"Stripe webhook sig_header: {sig_header}")
+    logger.info(f"Stripe webhook endpoint secret: {endpoint_secret}")
 
     try:
         event = stripe.Webhook.construct_event(
-            payload, sig_header, stripe.api_key
+            payload, sig_header, endpoint_secret
         )
+        logger.info(f"received event = {event}")
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except stripe.error.SignatureVerificationError as e:
         return jsonify({'error': str(e)}), 400
-
+    
+    email_from_webhook = event['data']['object']['customer_email']
     # 处理付款成功事件
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
@@ -1159,13 +1170,13 @@ def stripe_webhook():
 
         # 更新用户订阅信息
         subscription = Subscription.query.filter_by(
-            user_id=current_user.id,
+            user_email=email_from_webhook,
             status='active'
         ).first()
 
         if not subscription:
             subscription = Subscription(
-                user_id=current_user.id,
+                user_email=email_from_webhook,
                 plan_type=plan_type,
                 points=SUBSCRIPTION_PLANS[plan_type]['points'],
                 start_date=datetime.utcnow(),
@@ -1181,6 +1192,7 @@ def stripe_webhook():
 
     return jsonify({'success': True})
 
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 if __name__ == '__main__':
     with app.app_context():
