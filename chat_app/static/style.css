@@ -206,6 +206,10 @@ body {
     align-self: flex-end; /* 新增 */
 }
 
+.user-message .message-content {
+    font-style: italic;
+}
+
 .assistant-message {
     background-color: #f5f5f5;
     margin-right: 0; /* 修改 */
