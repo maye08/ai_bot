@@ -138,7 +138,9 @@ app.config.update(
 
 # 数据库配置
 # 使用 instance 目录
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(app.instance_path, "chat.db")}'
+#app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(app.instance_path, "chat.db")}'
+# 使用内存数据库进行测试
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # 初始化数据库
@@ -171,6 +173,15 @@ SYSTEM_MESSAGE = {
 }
 
 SYSTEM_MESSAGE_O = {
+    "role": "user",
+    "content": """你是一个AI助手。请严格遵守以下规则：
+1. 记住并使用当前对话中的所有信息
+2. 当用户询问身份相关信息时，从对话历史中查找最新的相关信息
+3. 如果找到相关信息，请明确回答
+4. 保持对话的连贯性和上下文关联"""
+}
+
+SYSTEM_MESSAGE_GEMINI = {
     "role": "user",
     "content": """你是一个AI助手。请严格遵守以下规则：
 1. 记住并使用当前对话中的所有信息
@@ -349,7 +360,74 @@ def chat_message():
         model_config = MODELS_CONFIG[model_id]
         
         try:
-            if model_config.model_type == ModelType.TEXT:
+            if model_config.model_type == ModelType.GEMINI:
+                current_messages = chat_session.messages.copy() if isinstance(chat_session.messages, list) else [SYSTEM_MESSAGE_GEMINI]
+                # 处理 Gemini 格式的消息
+                if current_messages and len(current_messages) > 0:
+                    # 转换历史消息为 Gemini 格式
+                    gemini_messages = []
+                    for msg in current_messages:
+                        if msg['role'] != 'system':  # 跳过系统消息
+                            gemini_messages.append({
+                                "role": "user" if msg['role'] == "user" else "model",
+                                "parts": [{msg['content']}]
+                            })
+                else:
+                    gemini_messages = []
+
+                # 添加新的用户消息
+                gemini_messages.append({
+                    "role": "user",
+                    "parts": [{user_message}]
+                })
+
+                response = model_processor.process_gemini(
+                    messages=gemini_messages,
+                    model_id=model_id,
+                    user_id=current_user.chat_id,  # 添加用户ID
+                    **model_config.params
+                )
+                
+                if response.get("type") != 'error':
+                    # 保存 Gemini 响应到历史记录
+                    current_messages.append({
+                        "role": "assistant",
+                        "content": response["content"],
+                        "type": "text"
+                    })
+                else:
+                    current_messages.append({
+                        "role": "system",
+                        "content": "服务器返回错误",
+                        "type": "error"
+                    })
+                chat_session.messages = current_messages
+                chat_session.last_message = user_message
+                chat_session.last_updated = datetime.utcnow()
+                db.session.commit()
+                # 消息处理成功后扣除积分
+                required_points = calculate_points(model_id, response)
+                if not deduct_points(current_user.chat_id, required_points):
+                    return jsonify({
+                        "error": "扣除积分失败",
+                        "code": "POINTS_DEDUCTION_FAILED"
+                    }), 500
+            
+                # 获取最新积分
+                subscription = Subscription.query.filter_by(
+                    user_id=current_user.chat_id,
+                    status='active'
+                ).first()
+            
+                return jsonify({
+                    "response": response,
+                    "current_tokens": num_tokens_from_messages(current_messages),
+                    "max_tokens": MAX_CONTEXT_LENGTH,
+                    "points_remaining": subscription.points if subscription else 0
+                })
+
+
+            elif model_config.model_type == ModelType.TEXT:
                 if model_id == 'o1-preview' or model_id == 'o1-mini':
                     current_messages = chat_session.messages.copy() if isinstance(chat_session.messages, list) else [SYSTEM_MESSAGE_O]
                 else:
@@ -1129,8 +1207,15 @@ def calculate_points(model_id: str, response_data: dict) -> int:
     model_config = MODELS_CONFIG.get(model_id)
     if not model_config:
         raise ValueError(f"未知的模型: {model_id}")
-    
-    if model_config.model_type == ModelType.TEXT:
+    if model_config.model_type == ModelType.GEMINI:
+        input_tokens = response_data.get('input_tokens', 0)
+        output_tokens = response_data.get('output_tokens', 0)
+        points = (
+            (input_tokens * model_config.input_price / 1000 + 
+             output_tokens * model_config.output_price / 1000)
+            * 100000
+        )
+    elif model_config.model_type == ModelType.TEXT:
         input_tokens = response_data.get('input_tokens', 0)
         output_tokens = response_data.get('output_tokens', 0)
         points = (
