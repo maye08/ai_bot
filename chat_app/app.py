@@ -26,6 +26,9 @@ from urllib.error import URLError
 import re
 from urllib.parse import urlparse
 import stripe
+import random
+import string
+from flask_mail import Mail, Message
 
 stripe.api_key = os.environ.get("STRIPE_API_KEY")
 endpoint_secret = os.getenv('STRIPE_ENDPOINT_SECRET')
@@ -138,7 +141,9 @@ app.config.update(
 
 # 数据库配置
 # 使用 instance 目录
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(app.instance_path, "chat.db")}'
+#app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(app.instance_path, "chat.db")}'
+# 使用内存数据库
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # 初始化数据库
@@ -275,7 +280,7 @@ def before_request():
     # 添加 get_captcha 到白名单
     logger.error(f"request endpoint is {request.endpoint}")
     logger.error(f"request path is {request.path}")
-    if request.endpoint in ['stripe_webhook', 'static', 'login', 'register', 'logout', 'get_captcha']:
+    if request.endpoint in ['stripe_webhook', 'static', 'login', 'register', 'logout', 'get_captcha', 'send_reset_code', 'verify_reset_code', 'reset_password']:
         return
     
     if not current_user.is_authenticated:
@@ -867,7 +872,7 @@ def register():
             user_id=user.chat_id,
             user_email=user.email,
             plan_type='free',
-            points=1000,  # 默认赠送的积分
+            points=100000,  # 默认赠送的积分
             start_date=datetime.utcnow(),
             end_date=datetime.utcnow() + timedelta(days=30),
             status='active'
@@ -1276,6 +1281,94 @@ def stripe_webhook():
     return jsonify({'success': True})
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+# 配置邮件发送
+app.config['MAIL_SERVER'] = 'smtp.larksuite.com'  # 使用你的邮件服务器
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+mail = Mail(app)
+
+# 存储验证码（实际应用中应该使用 Redis）
+reset_codes = {}
+
+@app.route('/send_reset_code', methods=['POST'])
+def send_reset_code():
+    try:
+        email = request.json.get('email')
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            return jsonify({"error": "该邮箱未注册"}), 400
+            
+        # 生成6位随机验证码
+        code = ''.join(random.choices(string.digits, k=6))
+        reset_codes[email] = {
+            'code': code,
+            'timestamp': datetime.utcnow()
+        }
+        
+        # 发送验证码邮件
+        msg = Message(
+            '密码重置验证码',
+            sender=app.config['MAIL_USERNAME'],
+            recipients=[email]
+        )
+        msg.body = f'您的密码重置验证码是：{code}，有效期为5分钟。'
+        mail.send(msg)
+        
+        return jsonify({"message": "验证码已发送"}), 200
+        
+    except Exception as e:
+        logger.error(f"发送验证码失败: {str(e)}")
+        return jsonify({"error": "发送验证码失败"}), 500
+
+@app.route('/verify_reset_code', methods=['POST'])
+def verify_reset_code():
+    email = request.json.get('email')
+    code = request.json.get('code')
+    
+    stored = reset_codes.get(email)
+    if not stored:
+        return jsonify({"error": "请先获取验证码"}), 400
+        
+    if datetime.utcnow() - stored['timestamp'] > timedelta(minutes=5):
+        del reset_codes[email]
+        return jsonify({"error": "验证码已过期"}), 400
+        
+    if stored['code'] != code:
+        return jsonify({"error": "验证码错误"}), 400
+        
+    return jsonify({"message": "验证成功"}), 200
+
+@app.route('/reset_password', methods=['POST'])
+def reset_password():
+    try:
+        email = request.json.get('email')
+        code = request.json.get('code')
+        new_password = request.json.get('new_password')
+        
+        # 再次验证验证码
+        stored = reset_codes.get(email)
+        if not stored or stored['code'] != code:
+            return jsonify({"error": "验证码无效"}), 400
+            
+        # 更新密码
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({"error": "用户不存在"}), 400
+            
+        user.set_password(new_password)
+        db.session.commit()
+        
+        # 清除验证码
+        del reset_codes[email]
+        
+        return jsonify({"message": "密码修改成功"}), 200
+        
+    except Exception as e:
+        logger.error(f"重置密码失败: {str(e)}")
+        return jsonify({"error": "重置密码失败"}), 500
 
 if __name__ == '__main__':
     with app.app_context():

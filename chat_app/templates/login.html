@@ -117,6 +117,7 @@
         <div class="auth-tabs">
             <button class="auth-tab active" onclick="switchTab('login')">登录</button>
             <button class="auth-tab" onclick="switchTab('register')">注册</button>
+            <button class="auth-tab" onclick="switchTab('reset')">修改密码</button>
         </div>
         
         <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
@@ -156,6 +157,93 @@
             <button type="submit">注册</button>
             <div class="error-message" id="register-error"></div>
         </form>
+        <!-- 添加修改密码表单 -->
+        <form id="reset-form" class="auth-form" onsubmit="handleReset(event)">
+            <div class="form-group">
+                <input type="email" name="email" placeholder="邮箱地址" required>
+            </div>
+            <div class="form-group captcha-group">
+                <input type="text" name="captcha" placeholder="验证码" required maxlength="4">
+                <img id="reset-captcha" class="captcha-image" alt="验证码" src="">
+                <button type="button" class="refresh-captcha" onclick="refreshCaptcha('reset')">刷新</button>
+            </div>
+            <div class="form-group verification-group" style="display: none;">
+                <input type="text" name="verification_code" placeholder="邮箱验证码" maxlength="6">
+                <button type="button" id="send-code-btn" onclick="sendVerificationCode()">发送验证码</button>
+            </div>
+            <div class="form-group password-group" style="display: none;">
+                <input type="password" name="new_password" placeholder="新密码">
+                <input type="password" name="confirm_new_password" placeholder="确认新密码">
+            </div>
+            <button type="submit" id="reset-submit-btn">下一步</button>
+            <div class="error-message" id="reset-error"></div>
+        </form>
+
+        <style>
+            .verification-group {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                margin-bottom: 15px;
+            }
+            
+            .verification-group input {
+                flex: 1;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+            }
+            
+            #send-code-btn {
+                padding: 8px 12px;
+                background-color: #1976d2;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                white-space: nowrap;
+                height: 36px;
+            }
+            
+            #send-code-btn:disabled {
+                background-color: #ccc;
+                cursor: not-allowed;
+            }
+            
+            .password-group {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .password-group input {
+                width: 100%;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                box-sizing: border-box;
+            }
+            
+            #reset-submit-btn {
+                width: 100%;
+                padding: 10px;
+                background-color: #1976d2;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                margin-top: 10px;
+            }
+            
+            #reset-submit-btn:hover {
+                background-color: #1565c0;
+            }
+            
+            #reset-submit-btn:disabled {
+                background-color: #ccc;
+                cursor: not-allowed;
+            }
+        </style>
     </div>
 
     <script>
@@ -320,6 +408,141 @@
                 refreshCaptcha('register');
             } finally {
                 submitButton.disabled = false;  // 重新启用提交按钮
+            }
+        }
+
+        let resetStep = 1;
+        let countdownTimer = null;
+        
+        async function handleReset(event) {
+            event.preventDefault();
+            const form = event.target;
+            const errorDiv = document.getElementById('reset-error');
+            const submitButton = document.getElementById('reset-submit-btn');
+            
+            errorDiv.style.display = 'none';
+            submitButton.disabled = true;
+            
+            try {
+                // 表单验证
+                if (resetStep === 1) {
+                    if (!form.email.value) {
+                        throw new Error('请输入邮箱地址');
+                    }
+                } else if (resetStep === 2) {
+                    if (!form.verification_code.value) {
+                        throw new Error('请输入验证码');
+                    }
+                } else if (resetStep === 3) {
+                    if (!form.new_password.value) {
+                        throw new Error('请输入新密码');
+                    }
+                    if (!form.confirm_new_password.value) {
+                        throw new Error('请确认新密码');
+                    }
+                    if (form.new_password.value !== form.confirm_new_password.value) {
+                        throw new Error('两次输入的密码不一致');
+                    }
+                }
+                
+                // 处理不同步骤
+                if (resetStep === 1) {
+                    form.querySelector('.verification-group').style.display = 'flex';
+                    resetStep = 2;
+                    submitButton.textContent = '验证';
+                    await sendVerificationCode();
+                } else if (resetStep === 2) {
+                    // 验证验证码
+                    const response = await fetch('/verify_reset_code', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            email: form.email.value,
+                            code: form.verification_code.value
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (response.ok) {
+                        form.querySelector('.password-group').style.display = 'block';
+                        resetStep = 3;
+                        submitButton.textContent = '修改密码';
+                    } else {
+                        throw new Error(data.error || '验证码错误');
+                    }
+                } else if (resetStep === 3) {
+                    // 修改密码
+                    const response = await fetch('/reset_password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            email: form.email.value,
+                            code: form.verification_code.value,
+                            new_password: form.new_password.value
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (response.ok) {
+                        alert('密码修改成功！');
+                        switchTab('login');
+                        resetStep = 1;
+                        form.reset();
+                        form.querySelector('.verification-group').style.display = 'none';
+                        form.querySelector('.password-group').style.display = 'none';
+                    } else {
+                        throw new Error(data.error || '密码修改失败');
+                    }
+                }
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.style.display = 'block';
+            } finally {
+                submitButton.disabled = false;
+            }
+        }
+        
+        async function sendVerificationCode() {
+            const form = document.getElementById('reset-form');
+            const email = form.email.value;
+            const button = document.getElementById('send-code-btn');
+            const errorDiv = document.getElementById('reset-error');
+            
+            try {
+                button.disabled = true;
+                const response = await fetch('/send_reset_code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    // 开始倒计时
+                    let countdown = 60;
+                    button.textContent = `${countdown}秒后重试`;
+                    
+                    if (countdownTimer) {
+                        clearInterval(countdownTimer);
+                    }
+                    
+                    countdownTimer = setInterval(() => {
+                        countdown--;
+                        if (countdown <= 0) {
+                            clearInterval(countdownTimer);
+                            button.disabled = false;
+                            button.textContent = '发送验证码';
+                        } else {
+                            button.textContent = `${countdown}秒后重试`;
+                        }
+                    }, 1000);
+                } else {
+                    throw new Error(data.error || '发送失败');
+                }
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.style.display = 'block';
+                button.disabled = false;
             }
         }
     </script>
