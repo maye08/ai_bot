@@ -56,7 +56,7 @@ SUBSCRIPTION_PLANS = {
         'interval': 'month',
         'interval_count': 1,
         'price': 0.99,
-        'price_id': 'price_1QZuYbICJ6vWDmTZ3BjqX38P',
+        'price_id': 'prod_RzxCRFTtmA6fnW',
         'points': 100000,
         'duration': 31  # 天数
     },
@@ -66,7 +66,7 @@ SUBSCRIPTION_PLANS = {
         'interval': 'year',
         'interval_count': 1,
         'price': 11.79,
-        'price_id': 'price_1QcQzRICJ6vWDmTZrQRMJH25',
+        'price_id': 'prod_RzxCwBY2xfYBPJ',
         'points': 1200000,
         'duration':365  # 天数
     }
