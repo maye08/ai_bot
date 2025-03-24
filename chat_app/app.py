@@ -56,7 +56,7 @@ SUBSCRIPTION_PLANS = {
         'interval': 'month',
         'interval_count': 1,
         'price': 0.99,
-        'price_id': 'prod_RzxCRFTtmA6fnW',
+        'price_id': 'price_1QZuYbICJ6vWDmTZ3BjqX38P',
         'points': 100000,
         'duration': 31  # 天数
     },
@@ -66,7 +66,7 @@ SUBSCRIPTION_PLANS = {
         'interval': 'year',
         'interval_count': 1,
         'price': 11.79,
-        'price_id': 'prod_RzxCwBY2xfYBPJ',
+        'price_id': 'price_1QcQzRICJ6vWDmTZrQRMJH25',
         'points': 1200000,
         'duration':365  # 天数
     }
@@ -143,7 +143,7 @@ app.config.update(
 # 使用 instance 目录
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(app.instance_path, "chat.db")}'
 # 使用内存数据库
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # 初始化数据库
@@ -161,10 +161,6 @@ if not api_key:
     raise ValueError("OpenAI API key not found!")
 
 client = OpenAI(api_key=api_key)
-deepseek_client = OpenAI(
-            api_key=os.environ.get("DEEPSEEK_API_KEY"),
-            base_url=os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
-        )
 
 # 设置对话上下文的最大长度
 MAX_CONTEXT_LENGTH = 128000
@@ -322,7 +318,7 @@ def get_chat_history():
         return jsonify({"error": "获取聊天历史失败"}), 500
 
 # 初始化模型处理器
-model_processor = ModelProcessor(client, deepseek_client)
+model_processor = ModelProcessor(client)
 
 @app.route('/get_models')
 @login_required
@@ -432,55 +428,7 @@ def chat_message():
                     "max_tokens": MAX_CONTEXT_LENGTH,
                     "points_remaining": subscription.points if subscription else 0
                 })
-            
-            elif model_config.model_type == ModelType.DEEPSEEK:
-                current_messages = chat_session.messages.copy() if isinstance(chat_session.messages, list) else [SYSTEM_MESSAGE]
-                current_messages.append({
-                            "role": "user",
-                            "content": user_message
-                        })
-                params = model_config.params.copy()
-                if 'max_completion_tokens' in params:
-                    params['max_completion_tokens'] = params.pop('max_completion_tokens')
-                
-                current_messages = clean_messages(current_messages, model_id)
-                response = model_processor.process_deepseek(
-                    messages=current_messages,
-                    model_id=model_id,
-                    **params
-                )
-                
-                if response.get("type") != 'error':
-                    current_messages.append({"role": "assistant", "content": response["content"], "type": "text"})
-                else:
-                    current_messages.append({"role": "system", "content": "服务器返回错误", "type": "error"})
-                chat_session.messages = current_messages
-                chat_session.last_message = user_message  # 更新最后一条消息
-                chat_session.last_updated = datetime.utcnow()
-                db.session.commit()
 
-                # 消息处理成功后扣除积分
-                # 计算并扣除积分
-                required_points = calculate_points(model_id, response)
-                if not deduct_points(current_user.chat_id, required_points):
-                    return jsonify({
-                        "error": "扣除积分失败",
-                        "code": "POINTS_DEDUCTION_FAILED"
-                    }), 500
-                
-                # 获取最新积分
-                subscription = Subscription.query.filter_by(
-                    user_id=current_user.chat_id,
-                    status='active'
-                ).first()
-                
-                return jsonify({
-                    "response": response,
-                    "current_tokens": num_tokens_from_messages(current_messages),
-                    "max_tokens": MAX_CONTEXT_LENGTH,
-                    "points_remaining": subscription.points if subscription else 0
-                })
-                pass
 
             elif model_config.model_type == ModelType.TEXT:
                 if model_id == 'o1-preview' or model_id == 'o1-mini':
