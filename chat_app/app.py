@@ -1051,7 +1051,7 @@ def create_order():
     try:
         checkout_session = stripe.checkout.Session.create(
             customer_email=user.email,  # 使用用户的email
-            payment_method_types=['card','wechat_pay','alipay','amazon_pay','apple_pay','google_pay','paypal'],
+            payment_method_types=['card','wechat_pay','alipay','amazon_pay','paypal'],
             payment_method_options={
                 'wechat_pay': {
                     'client': 'web'
