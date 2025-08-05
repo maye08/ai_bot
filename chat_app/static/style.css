@@ -6,7 +6,14 @@ body {
     padding: 0;
     background-color: #f0f2f5;
     height: 100vh;
-    overflow: hidden;
+    overflow: auto;
+}
+
+/* 订阅页面专用样式 */
+body.subscription-page {
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
 }
 
 /* 用户信息区域样式 */
@@ -437,6 +444,7 @@ code[class*="language-"] {
     background: white;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    overflow-y: visible; /* 确保内容可见 */
 }
 
 .subscription-header {
