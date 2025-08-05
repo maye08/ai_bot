@@ -955,7 +955,7 @@ def register():
             user_id=user.chat_id,
             user_email=user.email,
             plan_type='free',
-            points=100000,  # 默认赠送的积分
+            points=1000,  # 默认赠送的积分
             start_date=datetime.utcnow(),
             end_date=datetime.utcnow() + timedelta(days=30),
             status='active'
