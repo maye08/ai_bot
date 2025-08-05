@@ -43,11 +43,6 @@
             <h3>{{ plan.name }}</h3>
             <div class="price">${{ plan.price }}(美元)/{{ plan.period }}</div>
             <div class="points">{{ plan.points }} 积分</div>
-            <ul class="plan-features">
-                <li>无限对话次数</li>
-                <li>高级AI模型支持</li>
-                <li>优先客服支持</li>
-            </ul>
             <button onclick="createCheckoutSession('{{ plan_id }}')" class="subscribe-btn">
                 立即订阅
             </button>

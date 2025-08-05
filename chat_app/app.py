@@ -51,7 +51,7 @@ from chat_app.config.alipay_config import get_alipay_client
 # 订阅计划配置
 SUBSCRIPTION_PLANS = {
     'monthly_basic': {
-        'name': '月度基础版订阅（10w积分）',
+        'name': '月度基础版（10w积分）',
         'period': '月',
         'interval': 'month',
         'interval_count': 1,
@@ -61,7 +61,7 @@ SUBSCRIPTION_PLANS = {
         'duration': 31  # 天数
     },
     'monthly_standard': {
-        'name': '月度标准版订阅（50w积分）',
+        'name': '月度标准版（50w积分）',
         'period': '月',
         'interval': 'month',
         'interval_count': 1,
@@ -71,7 +71,7 @@ SUBSCRIPTION_PLANS = {
         'duration': 31  # 天数
     },
     'monthly_plus': {
-        'name': '月度增强版订阅（100w积分）',
+        'name': '月度增强版（100w积分）',
         'period': '月',
         'interval': 'month',
         'interval_count': 1,
@@ -81,7 +81,7 @@ SUBSCRIPTION_PLANS = {
         'duration': 31
     },
     'monthly_pro': {
-        'name': '月度专业版订阅（200w积分）',
+        'name': '月度专业版（200w积分）',
         'period': '月',
         'interval': 'month',
         'interval_count': 1,
@@ -91,7 +91,7 @@ SUBSCRIPTION_PLANS = {
         'duration': 31
     },
     'monthly_premium': {
-        'name': '月度尊享版订阅（400w积分）',
+        'name': '月度尊享版（400w积分）',
         'period': '月',
         'interval': 'month',
         'interval_count': 1,
@@ -101,7 +101,7 @@ SUBSCRIPTION_PLANS = {
         'duration': 31
     },
     'yearly_basic': {
-        'name': '年度基础版订阅（120w积分）',
+        'name': '年度基础版（120w积分）',
         'period': '年',
         'interval': 'year',
         'interval_count': 1,
@@ -111,7 +111,7 @@ SUBSCRIPTION_PLANS = {
         'duration':365  # 天数
     },
     'yearly_standard': {
-        'name': '年度标准版订阅（600w积分）',
+        'name': '年度标准版（600w积分）',
         'period': '年',
         'interval': 'year',
         'interval_count': 1,
@@ -121,7 +121,7 @@ SUBSCRIPTION_PLANS = {
         'duration': 365
     },
     'yearly_plus': {
-        'name': '年度增强版订阅（1200w积分）',
+        'name': '年度增强版（1200w积分）',
         'period': '年',
         'interval': 'year',
         'interval_count': 1,
@@ -131,7 +131,7 @@ SUBSCRIPTION_PLANS = {
         'duration': 365
     },
     'yearly_pro': {
-        'name': '年度专业版订阅（2400w积分）',
+        'name': '年度专业版（2400w积分）',
         'period': '年',
         'interval': 'year',
         'interval_count': 1,
