@@ -160,7 +160,10 @@ if not api_key:
     logger.error("OpenAI API key not found!")
     raise ValueError("OpenAI API key not found!")
 
-client = OpenAI(api_key=api_key)
+client = OpenAI(
+    api_key=api_key,
+    base_url=os.getenv('OPENAI_API_BASE', 'https://api.openai.com/v1')
+)
 
 # 设置对话上下文的最大长度
 MAX_CONTEXT_LENGTH = 128000
