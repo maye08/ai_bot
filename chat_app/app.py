@@ -50,8 +50,8 @@ from chat_app.config.alipay_config import get_alipay_client
 
 # 订阅计划配置
 SUBSCRIPTION_PLANS = {
-    'monthly': {
-        'name': '月度订阅',
+    'monthly_basic': {
+        'name': '月度基础版订阅（10w积分）',
         'period': '月',
         'interval': 'month',
         'interval_count': 1,
@@ -60,8 +60,48 @@ SUBSCRIPTION_PLANS = {
         'points': 100000,
         'duration': 31  # 天数
     },
-    'yearly': {
-        'name': '年度订阅',
+    'monthly_standard': {
+        'name': '月度标准版订阅（50w积分）',
+        'period': '月',
+        'interval': 'month',
+        'interval_count': 1,
+        'price': 4.94,
+        'price_id': 'price_1RskByICJ6vWDmTZnL5AWBhj',
+        'points': 500000,
+        'duration': 31  # 天数
+    },
+    'monthly_plus': {
+        'name': '月度增强版订阅（100w积分）',
+        'period': '月',
+        'interval': 'month',
+        'interval_count': 1,
+        'price': 9.85,
+        'price_id': 'price_1RskDbICJ6vWDmTZQckLJCYL',
+        'points': 1000000,
+        'duration': 31
+    },
+    'monthly_pro': {
+        'name': '月度专业版订阅（200w积分）',
+        'period': '月',
+        'interval': 'month',
+        'interval_count': 1,
+        'price': 19.59,
+        'price_id': 'price_1RskGOICJ6vWDmTZMKnL7ZoK',
+        'points': 2000000,
+        'duration': 31
+    },
+    'monthly_premium': {
+        'name': '月度尊享版订阅（400w积分）',
+        'period': '月',
+        'interval': 'month',
+        'interval_count': 1,
+        'price': 38.99,
+        'price_id': 'price_1RsknyICJ6vWDmTZzvnGxEcS',
+        'points': 4000000,
+        'duration': 31
+    },
+    'yearly_basic': {
+        'name': '年度基础版订阅（120w积分）',
         'period': '年',
         'interval': 'year',
         'interval_count': 1,
@@ -69,6 +109,46 @@ SUBSCRIPTION_PLANS = {
         'price_id': 'price_1R5xINICJ6vWDmTZdTmOEDkW',
         'points': 1200000,
         'duration':365  # 天数
+    },
+    'yearly_standard': {
+        'name': '年度标准版订阅（600w积分）',
+        'period': '年',
+        'interval': 'year',
+        'interval_count': 1,
+        'price': 51.99,
+        'price_id': 'price_1RskTUICJ6vWDmTZeNcxss8P',
+        'points': 6000000,
+        'duration': 365
+    },
+    'yearly_plus': {
+        'name': '年度增强版订阅（1200w积分）',
+        'period': '年',
+        'interval': 'year',
+        'interval_count': 1,
+        'price': 103.99,
+        'price_id': 'price_1RskUhICJ6vWDmTZeUFtpniv',  # 需要在Stripe创建
+        'points': 12000000,
+        'duration': 365
+    },
+    'yearly_pro': {
+        'name': '年度专业版订阅（2400w积分）',
+        'period': '年',
+        'interval': 'year',
+        'interval_count': 1,
+        'price': 205.99,
+        'price_id': 'price_1RskVpICJ6vWDmTZiB65iac9',  # 需要在Stripe创建
+        'points': 24000000,
+        'duration': 365
+    },
+    'yearly_premium': {
+        'name': '年度尊享版订阅（4800w积分）',
+        'period': '年',
+        'interval': 'year',
+        'interval_count': 1,
+        'price': 419.99,
+        'price_id': 'price_1RskrCICJ6vWDmTZ5iH8pJgi',  # 需要更新为真实ID
+        'points': 48000000,
+        'duration': 365
     }
 }
 
