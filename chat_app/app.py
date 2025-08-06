@@ -367,7 +367,7 @@ def before_request():
     # 添加 get_captcha 到白名单
     logger.error(f"request endpoint is {request.endpoint}")
     logger.error(f"request path is {request.path}")
-    if request.endpoint in ['stripe_webhook', 'static', 'login', 'register', 'logout', 'get_captcha', 'send_reset_code', 'verify_reset_code', 'reset_password', 'verify_email']:
+    if request.endpoint in ['stripe_webhook', 'static', 'login', 'register', 'logout', 'get_captcha', 'send_reset_code', 'verify_reset_code', 'reset_password', 'verify_email', 'reset_password_page']:
         return
     
     if not current_user.is_authenticated:
@@ -1432,36 +1432,52 @@ mail = Mail(app)
 # 存储验证码（实际应用中应该使用 Redis）
 reset_codes = {}
 
+# 修改发送重置验证码路由
 @app.route('/send_reset_code', methods=['POST'])
 def send_reset_code():
     try:
-        email = request.json.get('email')
-        user = User.query.filter_by(email=email).first()
+        data = request.json
+        email = data.get('email')
+        captcha = data.get('captcha', '').upper()
         
+        # 验证验证码
+        if 'captcha' not in session or captcha != session['captcha'].upper():
+            return jsonify({"error": "验证码错误"}), 400
+        
+        user = User.query.filter_by(email=email).first()
         if not user:
             return jsonify({"error": "该邮箱未注册"}), 400
             
-        # 生成6位随机验证码
-        code = ''.join(random.choices(string.digits, k=6))
-        reset_codes[email] = {
-            'code': code,
-            'timestamp': datetime.utcnow()
-        }
+        # 生成重置令牌
+        token = generate_verification_token()
+        user.email_verify_token = token  # 复用验证令牌字段
+        user.token_expiry = datetime.utcnow() + timedelta(hours=1)  # 1小时有效
+        db.session.commit()
         
-        # 发送验证码邮件
+        # 发送重置链接邮件
+        reset_url = f"{request.host_url}reset_password/{token}"
         msg = Message(
-            '密码重置验证码',
-            sender=app.config['MAIL_USERNAME'],
+            '密码重置链接',
+            sender=app.config['MAIL_DEFAULT_SENDER'],
             recipients=[email]
         )
-        msg.body = f'您的密码重置验证码是：{code}，有效期为5分钟。'
-        mail.send(msg)
+        msg.body = f'''您好，
+
+请点击以下链接重置您的密码：
+{reset_url}
+
+此链接1小时内有效。如果您没有申请重置密码，请忽略此邮件。
+
+此邮件由系统自动发送，请勿回复。'''
         
-        return jsonify({"message": "验证码已发送"}), 200
+        mail.send(msg)
+        session.pop('captcha', None)  # 清除验证码
+        
+        return jsonify({"message": "密码重置链接已发送到您的邮箱，请查收"}), 200
         
     except Exception as e:
-        logger.error(f"发送验证码失败: {str(e)}")
-        return jsonify({"error": "发送验证码失败"}), 500
+        logger.error(f"发送密码重置链接失败: {str(e)}")
+        return jsonify({"error": "发送失败，请稍后重试"}), 500
 
 @app.route('/verify_reset_code', methods=['POST'])
 def verify_reset_code():
@@ -1481,34 +1497,86 @@ def verify_reset_code():
         
     return jsonify({"message": "验证成功"}), 200
 
+# 添加重置密码页面路由
+@app.route('/reset_password/<token>')
+def reset_password_page(token):
+    try:
+        # 查找带有此令牌的用户
+        user = User.query.filter_by(email_verify_token=token).first()
+        
+        if not user:
+            return render_template('reset_password.html', 
+                                 success=False, 
+                                 message="无效的重置链接")
+        
+        # 检查令牌是否过期
+        if user.token_expiry and user.token_expiry < datetime.utcnow():
+            return render_template('reset_password.html', 
+                                 success=False,
+                                 message="重置链接已过期，请重新申请")
+        
+        # 显示密码重置表单
+        return render_template('reset_password.html', 
+                             success=True, 
+                             token=token,
+                             email=user.email)
+        
+    except Exception as e:
+        logger.error(f"密码重置页面错误: {str(e)}")
+        return render_template('reset_password.html', 
+                             success=False,
+                             message="访问重置页面时发生错误")
+
+# 处理密码重置表单提交
 @app.route('/reset_password', methods=['POST'])
 def reset_password():
     try:
-        email = request.json.get('email')
-        code = request.json.get('code')
-        new_password = request.json.get('new_password')
+        data = request.json
+        token = data.get('token')
+        new_password = data.get('new_password')
+        confirm_password = data.get('confirm_password')
         
-        # 再次验证验证码
-        stored = reset_codes.get(email)
-        if not stored or stored['code'] != code:
-            return jsonify({"error": "验证码无效"}), 400
-            
-        # 更新密码
-        user = User.query.filter_by(email=email).first()
+        if new_password != confirm_password:
+            return jsonify({"error": "两次输入的密码不一致"}), 400
+        
+        # 验证密码强度
+        password_error = validate_password(new_password)
+        if password_error:
+            return jsonify({"error": password_error}), 400
+        
+        # 查找用户
+        user = User.query.filter_by(email_verify_token=token).first()
         if not user:
-            return jsonify({"error": "用户不存在"}), 400
+            return jsonify({"error": "无效的重置令牌"}), 400
             
+        # 检查令牌是否过期
+        if user.token_expiry and user.token_expiry < datetime.utcnow():
+            return jsonify({"error": "重置链接已过期"}), 400
+        
+        # 更新密码
         user.set_password(new_password)
+        user.email_verify_token = None  # 清除令牌
+        user.token_expiry = None
         db.session.commit()
         
-        # 清除验证码
-        del reset_codes[email]
-        
-        return jsonify({"message": "密码修改成功"}), 200
+        return jsonify({"message": "密码修改成功，请使用新密码登录"}), 200
         
     except Exception as e:
         logger.error(f"重置密码失败: {str(e)}")
-        return jsonify({"error": "重置密码失败"}), 500
+        return jsonify({"error": "重置密码失败，请稍后重试"}), 500
+
+# 添加密码验证函数
+def validate_password(password):
+    """验证密码强度"""
+    if len(password) < 8:
+        return "密码长度至少为8位"
+    if not re.search(r'[A-Z]', password):
+        return "密码必须包含大写字母"
+    if not re.search(r'[a-z]', password):
+        return "密码必须包含小写字母"
+    if not re.search(r'[0-9]', password):
+        return "密码必须包含数字"
+    return None
     
 @app.route('/verify_email/<token>')
 def verify_email(token):
