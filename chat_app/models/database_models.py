@@ -19,6 +19,9 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(128))
     chat_id = db.Column(db.String(36), unique=True, nullable=False)
     # is_admin = db.Column(db.Boolean, default=False)  # 添加管理员标志
+    email_verified = db.Column(db.Boolean, default=False)  # 添加此字段
+    email_verify_token = db.Column(db.String(100))  # 存储验证令牌
+    token_expiry = db.Column(db.DateTime)  # 令牌过期时间
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def __init__(self, username, email):

@@ -152,6 +152,10 @@ SUBSCRIPTION_PLANS = {
     }
 }
 
+def generate_verification_token():
+    """生成邮箱验证令牌"""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=50))
+
 def is_valid_image_url(url):
     """简单检查图片URL是否可被下载"""
     try:
@@ -920,6 +924,9 @@ def login():
         
     user = User.query.filter_by(username=data.get('username')).first()
     if user and user.check_password(data.get('password')):
+        # 检查邮箱是否已验证
+        if not user.email_verified:
+            return jsonify({"error": "请先验证您的邮箱再登录"}), 401
         login_user(user)
         session.pop('captcha', None)  # 清除验证码
         return jsonify({"redirect_url": url_for('chat')})
@@ -939,8 +946,17 @@ def register():
         
     try:
         # 创建新用户
-        user = User(username=data.get('username'), email=data.get('email'))
+        user = User(
+            username=data.get('username'), 
+            email=data.get('email'),
+            email_verified=False  # 默认未验证
+        )
         user.set_password(data.get('password'))
+
+        # 生成验证令牌
+        token = generate_verification_token()
+        user.email_verify_token = token
+        user.token_expiry = datetime.utcnow() + timedelta(days=1)  # 24小时内有效
         
         chat_history = ChatHistory(
             user_id=user.chat_id,
@@ -963,10 +979,24 @@ def register():
 
         db.session.add(subscription)
         db.session.commit()
+
+        # 发送验证邮件
+        verification_url = f"{request.host_url}verify_email/{token}"
+        msg = Message(
+            '请验证您的邮箱',
+            sender=app.config['MAIL_USERNAME'],
+            recipients=[user.email]
+        )
+        msg.body = f'''请点击以下链接验证您的邮箱：
+{verification_url}
+
+此链接24小时内有效。如果您没有注册账号，请忽略此邮件。'''
+        mail.send(msg)
         
-        login_user(user)
+        # 注册成功但不自动登录
+        # login_user(user)
         session.pop('captcha', None)  # 清除验证码
-        return jsonify({"redirect_url": url_for('chat')})
+        return jsonify({"message": "注册成功，请查收邮件并点击验证链接激活账号"}), 200
     except Exception as e:
         db.session.rollback()
         logger.error(f"Registration error: {str(e)}")
@@ -1351,7 +1381,8 @@ def stripe_webhook():
                 plan_type=plan_type,
                 points=SUBSCRIPTION_PLANS[plan_type]['points'],
                 start_date=datetime.utcnow(),
-                end_date=datetime.utcnow() + timedelta(days=SUBSCRIPTION_PLANS[plan_type]['duration'])
+                end_date=datetime.utcnow() + timedelta(days=SUBSCRIPTION_PLANS[plan_type]['duration']),
+                status='active'
             )
         else:
             subscription.plan_type = plan_type
@@ -1365,11 +1396,12 @@ def stripe_webhook():
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 # 配置邮件发送
-app.config['MAIL_SERVER'] = 'smtp.larksuite.com'  # 使用你的邮件服务器
+app.config['MAIL_SERVER'] = 'smtp.titan.email'  # 使用你的邮件服务器
 app.config['MAIL_PORT'] = 465
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'maye@broad-intelli.com')
 mail = Mail(app)
 
 # 存储验证码（实际应用中应该使用 Redis）
@@ -1452,6 +1484,33 @@ def reset_password():
     except Exception as e:
         logger.error(f"重置密码失败: {str(e)}")
         return jsonify({"error": "重置密码失败"}), 500
+    
+@app.route('/verify_email/<token>')
+def verify_email(token):
+    try:
+        # 查找带有此令牌的用户
+        user = User.query.filter_by(email_verify_token=token).first()
+        
+        if not user:
+            return render_template('verify_email.html', success=False, 
+                                  message="无效的验证链接")
+        
+        # 检查令牌是否过期
+        if user.token_expiry < datetime.utcnow():
+            return render_template('verify_email.html', success=False,
+                                  message="验证链接已过期，请重新注册")
+        
+        # 验证用户邮箱
+        user.email_verified = True
+        user.email_verify_token = None  # 清除令牌
+        db.session.commit()
+        
+        return render_template('verify_email.html', success=True, 
+                              message="邮箱验证成功，现在您可以登录了")
+    except Exception as e:
+        logger.error(f"Email verification error: {str(e)}")
+        return render_template('verify_email.html', success=False,
+                              message="验证过程中发生错误")
 
 if __name__ == '__main__':
     with app.app_context():

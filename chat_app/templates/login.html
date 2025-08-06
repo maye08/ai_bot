@@ -398,7 +398,13 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    window.location.href = data.redirect_url;
+                    // 显示注册成功信息，而不是自动跳转
+                    errorDiv.style.color = '#155724';
+                    errorDiv.style.backgroundColor = '#d4edda';
+                    errorDiv.textContent = data.message || "注册成功，请查收邮件并点击验证链接激活账号";
+                    errorDiv.style.display = 'block';
+                    form.reset();
+                    //window.location.href = data.redirect_url;
                 } else {
                     errorDiv.textContent = data.error || '注册失败';
                     errorDiv.style.display = 'block';  // 显示错误信息

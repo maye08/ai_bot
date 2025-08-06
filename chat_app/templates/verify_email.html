@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}邮箱验证 - AI Chat{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <h2>邮箱验证</h2>
+    {% if success %}
+        <div class="success-message">
+            <p>{{ message }}</p>
+            <a href="{{ url_for('login') }}" class="login-link">点击此处登录</a>
+        </div>
+    {% else %}
+        <div class="error-message" style="display: block;">
+            <p>{{ message }}</p>
+            <a href="{{ url_for('login') }}" class="login-link">返回登录页面</a>
+        </div>
+    {% endif %}
+</div>
+
+<style>
+    .auth-container {
+        max-width: 400px;
+        margin: 50px auto;
+        padding: 20px;
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    
+    .success-message {
+        padding: 15px;
+        background-color: #d4edda;
+        border-radius: 4px;
+        margin: 15px 0;
+        color: #155724;
+    }
+    
+    .login-link {
+        display: inline-block;
+        margin-top: 15px;
+        padding: 8px 16px;
+        background-color: #1976d2;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+    }
+    
+    .login-link:hover {
+        background-color: #1565c0;
+    }
+</style>
+{% endblock %}
