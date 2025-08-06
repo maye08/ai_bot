@@ -367,7 +367,7 @@ def before_request():
     # 添加 get_captcha 到白名单
     logger.error(f"request endpoint is {request.endpoint}")
     logger.error(f"request path is {request.path}")
-    if request.endpoint in ['stripe_webhook', 'static', 'login', 'register', 'logout', 'get_captcha', 'send_reset_code', 'verify_reset_code', 'reset_password']:
+    if request.endpoint in ['stripe_webhook', 'static', 'login', 'register', 'logout', 'get_captcha', 'send_reset_code', 'verify_reset_code', 'reset_password', 'verify_email']:
         return
     
     if not current_user.is_authenticated:
@@ -1513,27 +1513,33 @@ def reset_password():
 @app.route('/verify_email/<token>')
 def verify_email(token):
     try:
+        logger.info(f"Email verification attempt with token: {token}")
         # 查找带有此令牌的用户
         user = User.query.filter_by(email_verify_token=token).first()
         
         if not user:
+            logger.warning(f"Invalid verification token: {token}")
             return render_template('verify_email.html', success=False, 
                                   message="无效的验证链接")
         
         # 检查令牌是否过期
         if user.token_expiry < datetime.utcnow():
+            logger.warning(f"Expired verification token for user: {user.email}")
             return render_template('verify_email.html', success=False,
                                   message="验证链接已过期，请重新注册")
         
         # 验证用户邮箱
         user.email_verified = True
         user.email_verify_token = None  # 清除令牌
+        user.token_expiry = None  # 清除过期时间
         db.session.commit()
-        
+        logger.info(f"Email verification successful for user: {user.email}")
         return render_template('verify_email.html', success=True, 
                               message="邮箱验证成功，现在您可以登录了")
     except Exception as e:
         logger.error(f"Email verification error: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return render_template('verify_email.html', success=False,
                               message="验证过程中发生错误")
 
