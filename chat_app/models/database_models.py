@@ -24,11 +24,14 @@ class User(UserMixin, db.Model):
     token_expiry = db.Column(db.DateTime)  # 令牌过期时间
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    def __init__(self, username, email):
+    def __init__(self, username, email,email_verified=False, email_verify_token=None, token_expiry=None):
         self.username = username
         self.email = email  # 初始化email
         self.chat_id = str(uuid.uuid4())
-    
+        self.email_verified = email_verified
+        self.email_verify_token = email_verify_token
+        self.token_expiry = token_expiry
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
         
