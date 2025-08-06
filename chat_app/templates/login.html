@@ -380,7 +380,11 @@
             
             try {
                 // 禁用提交按钮，防止重复提交
+                const originalButtonText = submitButton.value;
                 submitButton.disabled = true;
+                submitButton.value = '注册中...';
+                submitButton.style.opacity = '0.6';
+                submitButton.style.cursor = 'not-allowed';
                 
                 const response = await fetch('/register', {
                     method: 'POST',
@@ -405,6 +409,15 @@
                     errorDiv.style.display = 'block';
                     form.reset();
                     //window.location.href = data.redirect_url;
+                    // 注册成功后保持按钮禁用状态，防止重复注册
+                    submitButton.value = '注册成功';
+                    // 可选：3秒后恢复按钮
+                    setTimeout(() => {
+                        submitButton.disabled = false;
+                        submitButton.value = originalButtonText;
+                        submitButton.style.opacity = '1';
+                        submitButton.style.cursor = 'pointer';
+                    }, 3000);
                 } else {
                     errorDiv.textContent = data.error || '注册失败';
                     errorDiv.style.display = 'block';  // 显示错误信息
