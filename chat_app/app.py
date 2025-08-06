@@ -943,8 +943,13 @@ def register():
     
     if User.query.filter_by(username=data.get('username')).first():
         return jsonify({"error": "用户名已存在"}), 400
+    
+    # 添加邮箱重复检查
+    if User.query.filter_by(email=data.get('email')).first():
+        return jsonify({"error": "该邮箱已被注册"}), 400
         
     try:
+        logger.info("=== Registration request started ===")
         # 创建新用户
         user = User(
             username=data.get('username'), 
@@ -952,11 +957,13 @@ def register():
             email_verified=False  # 默认未验证
         )
         user.set_password(data.get('password'))
+        logger.info("User object created successfully")
 
         # 生成验证令牌
         token = generate_verification_token()
         user.email_verify_token = token
         user.token_expiry = datetime.utcnow() + timedelta(days=1)  # 24小时内有效
+        logger.info("Verification token generated")
         
         chat_history = ChatHistory(
             user_id=user.chat_id,
@@ -979,28 +986,45 @@ def register():
 
         db.session.add(subscription)
         db.session.commit()
+        logger.info("Database commit successful")
 
         # 发送验证邮件
-        verification_url = f"{request.host_url}verify_email/{token}"
-        msg = Message(
-            '请验证您的邮箱',
-            sender=app.config['MAIL_USERNAME'],
-            recipients=[user.email]
-        )
-        msg.body = f'''请点击以下链接验证您的邮箱：
-{verification_url}
+        try:
+            verification_url = f"{request.host_url}verify_email/{token}"
+            msg = Message(
+                '请验证您的邮箱',
+                sender=app.config['MAIL_DEFAULT_SENDER'],
+                recipients=[user.email]
+            )
+            msg.body = f'''请点击以下链接验证您的邮箱：
+    {verification_url}
 
-此链接24小时内有效。如果您没有注册账号，请忽略此邮件。'''
-        mail.send(msg)
-        
+    此链接24小时内有效。如果您没有注册账号，请忽略此邮件。'''
+            logger.info(f"Attempting to send email to {user.email}")
+            mail.send(msg)
+            logger.info("Verification email sent successfully")
+        except Exception as email_error:
+            logger.error(f"Email sending failed: {str(email_error)}")
+            # 邮件发送失败不影响注册成功，但要通知用户
+            session.pop('captcha', None)
+            return jsonify({
+                "message": "注册成功，但邮件发送失败。请联系管理员手动激活账号。",
+                "warning": "email_failed"
+            }), 200
         # 注册成功但不自动登录
         # login_user(user)
         session.pop('captcha', None)  # 清除验证码
+        logger.info("=== Registration completed successfully ===")
         return jsonify({"message": "注册成功，请查收邮件并点击验证链接激活账号"}), 200
     except Exception as e:
+        logger.error(f"=== Registration error ===")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         db.session.rollback()
         logger.error(f"Registration error: {str(e)}")
-        return jsonify({"error": "注册失败"}), 500
+        return jsonify({"error": "注册失败, 请稍后再试"}), 500
 
 @app.route('/logout')
 @login_required
@@ -1398,7 +1422,8 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 # 配置邮件发送
 app.config['MAIL_SERVER'] = 'smtp.titan.email'  # 使用你的邮件服务器
 app.config['MAIL_PORT'] = 465
-app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USE_SSL'] = True
+app.config['MAIL_USE_TLS'] = False  # 关闭 TLS
 app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'maye@broad-intelli.com')
